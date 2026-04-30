@@ -102,7 +102,6 @@ function CliBanner() {
 
 export function ProjectPage() {
   const {
-    orgId,
     projectId,
     projectName,
     environments,
@@ -110,7 +109,7 @@ export function ProjectPage() {
     secrets,
     allSecretNames,
     showBanner,
-  } = useLoaderData('/orgs/:orgId/projects/:projectId/envs/:envSlug');
+  } = useLoaderData('/projects/:projectId/envs/:envSlug');
   const [allVisible, setAllVisible] = useState(false);
 
   return (
@@ -129,7 +128,7 @@ export function ProjectPage() {
             onValueChange={(val: string | null) => {
               if (!val) return
               const env = environments.find((e) => e.id === val);
-              if (env) router.push(router.href('/orgs/:orgId/projects/:projectId/envs/:envSlug', { orgId, projectId, envSlug: env.slug }));
+              if (env) router.push(router.href('/projects/:projectId/envs/:envSlug', { projectId, envSlug: env.slug }));
             }}
           >
             <SelectTrigger size="sm" className="w-auto min-w-40">

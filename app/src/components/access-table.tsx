@@ -30,7 +30,7 @@ type Member = {
 }
 
 export function AccessPage() {
-  const { projectName, orgId, role, currentUserId, members } = useLoaderData('/orgs/:orgId/projects/:projectId/access')
+  const { projectName, orgId, role, currentUserId, members } = useLoaderData('/projects/:projectId/access')
 
   return (
     <div className="flex flex-col gap-3 w-full">

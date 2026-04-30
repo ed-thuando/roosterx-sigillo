@@ -61,7 +61,7 @@ export async function createProjectAction({ name, orgId }: { name: string; orgId
       db.insert(schema.environment).values({ projectId, name: e.name, slug: e.slug }),
     ),
   ] as const)
-  throw redirect(`/orgs/${orgId}/projects/${proj!.id}`)
+  throw redirect(`/projects/${proj!.id}`)
 }
 
 // All secret mutations append to the secretEvent log. Never update or delete events.

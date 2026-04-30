@@ -147,8 +147,8 @@ function SidebarContent({
           {projects.map((project) => {
             const isActive = currentProjectId === project.id;
             const href = project.firstEnvSlug
-              ? router.href('/orgs/:orgId/projects/:projectId/envs/:envSlug', { orgId: currentOrgId!, projectId: project.id, envSlug: project.firstEnvSlug })
-              : router.href('/orgs/:orgId/projects/:id', { orgId: currentOrgId!, id: project.id })
+              ? router.href('/projects/:projectId/envs/:envSlug', { projectId: project.id, envSlug: project.firstEnvSlug })
+              : router.href('/projects/:projectId', { projectId: project.id })
             return (
               <Link
                 key={project.id}

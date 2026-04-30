@@ -36,9 +36,8 @@ export function EventLogTable() {
     events,
     environments,
     selectedEnvId,
-    orgId,
     projectId,
-  } = useLoaderData('/orgs/:orgId/projects/:projectId/envs/:envSlug/event-log');
+  } = useLoaderData('/projects/:projectId/envs/:envSlug/event-log');
   const [visibleValues, setVisibleValues] = useState<Record<string, boolean>>({});
 
   const toggleValue = (id: string) => {
@@ -54,7 +53,7 @@ export function EventLogTable() {
           onValueChange={(val: string | null) => {
             if (!val) return
             const env = environments.find((e) => e.id === val);
-            if (env) router.push(router.href('/orgs/:orgId/projects/:projectId/envs/:envSlug/event-log', { orgId, projectId, envSlug: env.slug }));
+            if (env) router.push(router.href('/projects/:projectId/envs/:envSlug/event-log', { projectId, envSlug: env.slug }));
           }}
         >
           <SelectTrigger size="sm" className="w-auto min-w-40">

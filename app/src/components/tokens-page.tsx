@@ -37,7 +37,7 @@ type Token = {
 }
 
 export function TokensPage() {
-  const { projectName, projectId, environments, tokens } = useLoaderData('/orgs/:orgId/projects/:projectId/tokens')
+  const { projectName, projectId, environments, tokens } = useLoaderData('/projects/:projectId/tokens')
   const [createOpen, setCreateOpen] = useState(false)
 
   return (
