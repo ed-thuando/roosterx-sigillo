@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0
+## 0.9.1
 
 1. **Configured subfolders shown in error messages** — when you run `sigillo run` from a directory without a project configured, the error now lists subfolders that _are_ set up with their project names and environments. This helps agents and users discover they need to `cd` into the right directory:
 
