@@ -131,6 +131,43 @@ source .env && next dev
 sigillo run -- next dev
 ```
 
+### Put `sigillo run` inside package scripts
+
+If a `package.json` script requires secrets, embed `sigillo run` directly in the script. Do not rely on users or agents remembering to prefix the command manually. The script should choose the correct environment for the target.
+
+```json
+{
+  "scripts": {
+    "dev": "sigillo run -c dev -- vite dev",
+    "deployment": "sigillo run -c preview -- pnpm db:migrate:preview && CLOUDFLARE_ENV=preview sigillo run -c preview --command 'vite build && wrangler deploy --env preview'",
+    "deployment:prod": "sigillo run -c prod -- pnpm db:migrate:prod && sigillo run -c prod --command 'vite build && wrangler deploy'"
+  }
+}
+```
+
+Use `-c dev` for local development, `-c preview` for staging or preview deployments, and `-c prod` or the repo's production slug for production.
+
+### Use `--command` for shell expansion
+
+Use direct argv mode when no shell syntax is needed:
+
+```bash
+sigillo run -c preview -- pnpm db:migrate:preview
+```
+
+Use `--command` when the command needs shell features such as `&&`, pipes, redirects, inline env vars, or `$VARIABLE` expansion. Wrap the command in single quotes so the parent shell does not expand `$VARIABLE` before Sigillo injects secrets.
+
+```bash
+# BAD: the parent shell expands $DATABASE_URL before sigillo runs
+sigillo run --command "psql $DATABASE_URL -c 'select 1'"
+
+# GOOD: $DATABASE_URL expands inside sigillo's child shell after secrets are injected
+sigillo run --command 'psql $DATABASE_URL -c "select 1"'
+
+# GOOD: put non-secret env vars before sigillo run, then use command mode for the chain
+CLOUDFLARE_ENV=preview sigillo run -c preview --command 'vite build && wrangler deploy --env preview'
+```
+
 ### Directory scoping
 
 `sigillo setup` binds the current directory to a project and environment via `~/.sigillo/config.json`. The CLI resolves config by **longest matching scope** — a deeper directory wins over a parent.
@@ -234,4 +271,3 @@ https://sigillo.dev/orgs/01ABC.../projects/01DEF.../envs/prod
 sigillo secrets -c dev
 sigillo run -c dev -- pnpm dev
 ```
-
