@@ -21,7 +21,7 @@
     "@better-auth/oauth-provider": "latest",
     "@tailwindcss/vite": "^4.2.2",
     "better-auth": "latest",
-    "drizzle-orm": "1.0.0-beta.21",
+    "drizzle-orm": "1.0.0-rc.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "sigillo-app": "workspace:^",
@@ -36,7 +36,7 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
-    "drizzle-kit": "1.0.0-beta.21",
+    "drizzle-kit": "1.0.0-rc.1",
     "typescript": "latest",
     "vite": "latest",
     "wrangler": "latest"
