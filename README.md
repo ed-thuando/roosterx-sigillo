@@ -17,6 +17,35 @@ source .env && next dev
 sigillo run -- next dev
 ```
 
+```
+                                                 ┌────────────────┐
+  sigillo run -- next dev                        │   App Worker   │
+         │                                       │  (sigillo.dev) │
+         │  1. fetch secrets                     │                │
+         │──────────────────────────────────────▶│  decrypt       │
+         │  { DB_URL, API_KEY, ... }             │  AES-256-GCM   │
+         │◀──────────────────────────────────────│                │
+         │                                       └────────────────┘
+         │  2. spawn child with env vars
+         │
+         ▼
+  ┌──────────────┐
+  │  next dev    │
+  │  (child)     │
+  └──────┬───────┘
+         │
+         │  3. stdout / stderr
+         ▼
+  ┌───────────────┐
+  │   redaction   │  high-entropy values replaced with *
+  │    filter     │  secrets never reach your terminal
+  └──────┬────────┘
+         │
+         ▼
+     terminal
+    (safe output)
+```
+
 Secrets are **automatically redacted** from process output so they never leak into agent context windows, CI logs, or terminal history.
 
 **Open-source alternative** to [Doppler](https://doppler.com) and [Infisical](https://infisical.com).
@@ -101,6 +130,32 @@ Migrating from Doppler? See the [Doppler migration guide](docs/doppler-migration
 ## Setting up a new project
 
 The Quick Start above assumes you already have a project with secrets. This section walks through creating everything from scratch, either from the CLI or the [dashboard](https://sigillo.dev).
+
+Sigillo organizes secrets into a simple hierarchy:
+
+```
+Organization (my-company)
+│
+├── Project (api)
+│   ├── dev
+│   │   ├── DATABASE_URL = postgres://localhost/mydb
+│   │   ├── API_KEY = sk-dev-xxx
+│   │   └── AUTH_SECRET = random-dev-key
+│   ├── preview
+│   │   ├── DATABASE_URL = postgres://preview-host/mydb
+│   │   └── API_KEY = sk-preview-xxx
+│   └── prod
+│       ├── DATABASE_URL = postgres://prod-host/mydb
+│       └── API_KEY = sk-live-xxx
+│
+└── Project (web)
+    ├── dev
+    │   └── NEXT_PUBLIC_API_URL = http://localhost:3001
+    └── prod
+        └── NEXT_PUBLIC_API_URL = https://api.example.com
+```
+
+Each **organization** contains multiple **projects**. Each project has **environments** (dev, preview, prod by default). Secrets are scoped to a single environment.
 
 ### Create an organization
 
@@ -531,12 +586,67 @@ CLI/Agent                    App (self-hosted)              Provider (auth.sigil
 </details>
 
 <details>
+<summary><b>Local dev vs CI authentication</b></summary>
+
+Two auth paths depending on the environment:
+
+```
+  Local development                     CI / GitHub Actions
+  ─────────────────                     ───────────────────
+
+  sigillo login                         SIGILLO_TOKEN=sig_xxx
+       │                                     │
+       ▼                                     │
+  Browser opens /device                      │
+       │                                     │
+       ▼                                     │
+  Enter user_code                            │
+       │                                     │
+       ▼                                     │
+  Google sign-in                             │
+       │                                     │
+       ▼                                     ▼
+  Session cookie saved               Bearer token from env
+  in ~/.sigillo/config.json           var or GitHub secret
+       │                                     │
+       ▼                                     ▼
+  sigillo run -- next dev             sigillo run -- next build
+```
+
+**Local**: interactive device flow (RFC 8628). Run `sigillo login` once, then the session is reused.
+
+**CI**: set `SIGILLO_TOKEN` as a secret in your CI provider. No browser needed, no interactive prompts.
+
+</details>
+
+<details>
 <summary><b>Secrets encryption</b></summary>
 
 Every secret value is **AES-256-GCM** encrypted before storage. Each write generates a random 12-byte IV. The encryption key is either:
 
 - `ENCRYPTION_KEY`: 32 random bytes, base64-encoded (`openssl rand -base64 32`)
 - Derived from `BETTER_AUTH_SECRET` via SHA-256 (default if `ENCRYPTION_KEY` is not set)
+
+```
+  plaintext value ("sk-live-xxx")
+        │
+        ▼
+  ┌─────────────┐     ┌──────────────┐
+  │ AES-256-GCM │◀────│  12-byte     │
+  │   encrypt   │     │  random IV   │
+  └──────┬──────┘     └──────────────┘
+         │
+         ▼
+  ┌────────────────────────────────┐
+  │ secretEvent (append-only row)  │
+  │                                │
+  │  action:    "set"              │
+  │  name:      "API_KEY"          │
+  │  value:     <iv>:<ciphertext>  │
+  │  userId:    usr_abc            │
+  │  createdAt: 1719000000         │
+  └────────────────────────────────┘
+```
 
 Secrets are stored as an **append-only event log**. Current values are derived by replaying events. This gives you a full audit trail of every change with user/token attribution.
 
