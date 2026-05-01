@@ -468,7 +468,19 @@ sigillo secrets download --format dotnet-json > appsettings.Secrets.json
 
 ## Self-hosting
 
-Sigillo runs on **Cloudflare Workers + D1**. To deploy your own instance:
+Sigillo runs on **Cloudflare Workers + D1**. You only need to deploy the **App Worker**. The Provider Worker (authentication) is optional because your self-hosted instance can use the hosted provider at `auth.sigillo.dev` by default.
+
+```
+Your Cloudflare account              Sigillo Cloud
+┌──────────────────────┐             ┌──────────────────────┐
+│   App Worker         │   OAuth     │  Provider Worker     │
+│   (your secrets)     │────────────▶│  (auth.sigillo.dev)  │
+│                      │    PKCE     │                      │
+│  You deploy this     │◀────────────│  Already running     │
+└──────────────────────┘             └──────────────────────┘
+```
+
+This means you don't need Google OAuth credentials and the deployment is a single worker.
 
 1. Clone the repo and install dependencies:
 
@@ -484,7 +496,26 @@ BETTER_AUTH_SECRET=<any random string>
 ENCRYPTION_KEY=<output of: openssl rand -base64 32>
 ```
 
-3. Create `provider/.dev.vars`:
+3. Run locally:
+
+```bash
+pnpm --dir app dev
+```
+
+4. Deploy:
+
+```bash
+pnpm --dir app deployment            # deploy preview worker
+pnpm --dir app deployment:prod       # deploy production worker
+```
+
+The app auto-registers with `auth.sigillo.dev` on first request via [RFC 7591](https://tools.ietf.org/html/rfc7591) dynamic client registration. No Google OAuth credentials needed, no manual setup.
+
+### Self-hosting the provider (optional)
+
+By default, your self-hosted app uses `auth.sigillo.dev` for authentication. If you want a fully air-gapped setup with no dependency on Sigillo cloud, you can deploy the Provider Worker yourself.
+
+1. Create `provider/.dev.vars` (requires Google OAuth credentials):
 
 ```
 BETTER_AUTH_SECRET=<any random string>
@@ -492,24 +523,24 @@ GOOGLE_CLIENT_ID=<your Google OAuth client ID>
 GOOGLE_CLIENT_SECRET=<your Google OAuth client secret>
 ```
 
-4. Run locally:
+2. Deploy the provider:
 
 ```bash
-pnpm --dir provider dev     # start provider (runs migrations automatically)
-pnpm --dir app dev           # start app (runs migrations automatically)
+pnpm --dir provider deployment       # deploy preview
+pnpm --dir provider deployment:prod  # deploy production
 ```
 
-5. Deploy preview first, then production:
+3. Point the app at your self-hosted provider by changing `PROVIDER_URL` in `app/wrangler.jsonc`:
 
-```bash
-pnpm --dir provider deployment       # deploy provider preview worker
-pnpm --dir app deployment            # deploy app preview worker
-
-pnpm --dir provider deployment:prod  # deploy provider production worker
-pnpm --dir app deployment:prod       # deploy app production worker
+```jsonc
+{
+  "vars": {
+    "PROVIDER_URL": "https://your-provider.your-domain.com"
+  }
+}
 ```
 
-The app auto-registers with the provider on first request via dynamic client registration. No manual OAuth setup needed.
+Then redeploy the app. It will auto-register with your provider on the next request.
 
 ## How it works
 
