@@ -7,7 +7,7 @@
     <br/>
 </div>
 
-Sigillo replaces `.env` files with a **cloud-based secrets manager** you can self-host. Instead of reading from local files, prefix your commands with `sigillo run` — secrets are injected as environment variables, never written to disk.
+Sigillo replaces `.env` files with a **cloud-based secrets manager** you can self-host. Prefix your commands with `sigillo run` and secrets are injected as environment variables, never written to disk.
 
 ```bash
 # instead of this
@@ -25,21 +25,21 @@ Secrets are **automatically redacted** from process output so they never leak in
 
 ### Why not Doppler or Infisical?
 
-- **Self-hosted** — Runs on your own Cloudflare account. No centralized point of failure, no vendor lock-in. Your secrets never leave infrastructure you control.
-- **Free** — No per-seat pricing, no usage limits. Deploy it once, use it forever.
-- **Open source** — MIT licensed. Read the code, audit it, extend it.
+- **Self-hosted**: runs on your own Cloudflare account. No centralized point of failure, no vendor lock-in. Your secrets never leave infrastructure you control.
+- **Free**: no per-seat pricing, no usage limits. Deploy it once, use it forever.
+- **Open source**: MIT licensed. Read the code, audit it, extend it.
 
 ### Why teams need this
 
-- **No more `.env` files** — Secrets live in the cloud and are easy to share across machines. No more "can you send me the .env?" on Slack.
-- **Single source of truth** — Stop duplicating secrets across platforms. In CI, you only need the Sigillo token. Use built-in scripts to sync secrets to Cloudflare, Vercel, Docker, and more.
-- **Collaborative secrets** — Share secrets between team members through organizations with role-based access, instead of brittle `.env` files or pasting keys in DMs.
-- **Multi-environment management** — Manage dev, staging, and production secrets in one place. Switch between environments with `-c production`.
+- **No more `.env` files**: secrets live in the cloud and are easy to share across machines. No more "can you send me the .env?" on Slack.
+- **Single source of truth**: stop duplicating secrets across platforms. In CI, you only need the Sigillo token. Use built-in scripts to sync secrets to Cloudflare, Vercel, Docker, and more.
+- **Collaborative secrets**: share secrets between team members through organizations with role-based access, instead of brittle `.env` files or pasting keys in DMs.
+- **Multi-environment management**: manage dev, staging, and production secrets in one place. Switch between environments with `-c production`.
 
 ### Why agents need this
 
-- **Don't let agents read your secrets** — Agents should never see your raw secret values. Instead of giving agents access to `.env` files, use `sigillo run` to inject secrets into processes without exposing them.
-- **Automatic output redaction** — `sigillo run` replaces secret values in stdout/stderr with `*`, so secrets never enter your chat context window. Even if an agent runs `printenv`, it won't see the real values in the output.
+- **Don't let agents read your secrets**: agents should never see your raw secret values. Instead of giving agents access to `.env` files, use `sigillo run` to inject secrets into processes without exposing them.
+- **Automatic output redaction**: `sigillo run` replaces secret values in stdout/stderr with `*`, so secrets never enter your chat context window. Even if an agent runs `printenv`, it won't see the real values in the output.
 
 ## Install skill for AI agents
 
@@ -74,13 +74,13 @@ bunx sigillo run -- next dev
 
 **1. Add your secrets** at [sigillo.dev](https://sigillo.dev) (or your self-hosted instance). Create a project, add environments, and paste in your secrets from the web UI.
 
-**2. Login from the terminal** — opens a browser for device flow authentication:
+**2. Login from the terminal** (opens a browser for device flow authentication):
 
 ```bash
 sigillo login
 ```
 
-**3. Link your project** — picks the default project and environment for this directory:
+**3. Link your project** (picks the default project and environment for this directory):
 
 ```bash
 sigillo setup
@@ -94,7 +94,7 @@ This saves the project and environment for the current directory in `~/.sigillo/
 sigillo run -- next dev
 ```
 
-That's it. No `.env` files, no copy-pasting keys. Go back to [sigillo.dev](https://sigillo.dev) any time to add, edit, or rotate secrets — the next `sigillo run` picks them up automatically.
+That's it. No `.env` files, no copy-pasting keys. Go back to [sigillo.dev](https://sigillo.dev) any time to add, edit, or rotate secrets. The next `sigillo run` picks them up automatically.
 
 Migrating from Doppler? See the [Doppler migration guide](docs/doppler-migration.md).
 
@@ -194,7 +194,7 @@ sigillo run -c dev -- pnpm dev
 | **Projects & environments** | Organize secrets into projects with dev/preview/production environments |
 | **Audit log** | Append-only event log tracks every secret change with user attribution |
 | **API tokens** | Scoped to project or single environment, SHA-256 hashed, shown once |
-| **Device flow** | RFC 8628 login for CLI and agents — no copy-pasting tokens |
+| **Device flow** | RFC 8628 login for CLI and agents, no copy-pasting tokens |
 | **AES-256-GCM encryption** | Every secret encrypted at rest with a random 12-byte IV |
 | **Download formats** | Export as `json`, `env`, `yaml`, `docker`, `dotnet-json`, `xargs` |
 | **Web UI** | Full management dashboard with Doppler-style hidden values |
@@ -238,7 +238,7 @@ sigillo run --mount config.json --mount-format json -- next dev  # mount as JSON
 sigillo run --disable-redaction -- ./my-script.sh                # opt out of output redaction
 ```
 
-**Output redaction** is enabled by default — secret values with high entropy (≥3.5 Shannon bits, ≥16 chars) are replaced with `*` in stdout/stderr. This prevents secrets from leaking into agent context windows or CI logs.
+**Output redaction** is enabled by default. Secret values with high entropy (>=3.5 Shannon bits, >=16 chars) are replaced with `*` in stdout/stderr. This prevents secrets from leaking into agent context windows or CI logs.
 
 ### `sigillo secrets`
 
@@ -294,7 +294,7 @@ Most commands that resolve auth, project, or environment from config accept thes
 | `env-no-quotes` | `--format env-no-quotes` | Shell scripts without quotes |
 | `yaml` | `--format yaml` | Default CLI output |
 | `docker` | `--format docker` | Docker `--env-file` |
-| `dotnet-json` | `--format dotnet-json` | .NET `appsettings.json` (uses `__` → nested keys) |
+| `dotnet-json` | `--format dotnet-json` | .NET `appsettings.json` (uses `__` for nested keys) |
 | `xargs` | `--format xargs` | NUL-delimited pairs for shell pipelines |
 
 ## Integrations
@@ -346,7 +346,7 @@ As a `package.json` script:
 
 ### Fly.io
 
-`fly secrets import` reads `NAME=VALUE` pairs from stdin — pipe `sigillo secrets download` directly, no temp file needed:
+`fly secrets import` reads `NAME=VALUE` pairs from stdin. Pipe `sigillo secrets download` directly, no temp file needed:
 
 ```bash
 sigillo secrets download -c production --format env | fly secrets import --app my-app
@@ -495,9 +495,9 @@ Sigillo is two Cloudflare Workers in a monorepo, each backed by a D1 (SQLite) da
 └──────────────────────┘         └──────────────────────┘
 ```
 
-**App** — The secret manager you self-host. Handles secrets encryption, organizations, projects, environments, and the web UI.
+**App**: the secret manager you self-host. Handles secrets encryption, organizations, projects, environments, and the web UI.
 
-**Provider** — Centralized OAuth provider at `auth.sigillo.dev`. Self-hosted instances register automatically via [RFC 7591](https://tools.ietf.org/html/rfc7591) dynamic client registration as public PKCE clients (no client secret needed).
+**Provider**: centralized OAuth provider at `auth.sigillo.dev`. Self-hosted instances register automatically via [RFC 7591](https://tools.ietf.org/html/rfc7591) dynamic client registration as public PKCE clients (no client secret needed).
 
 </details>
 
@@ -535,10 +535,10 @@ CLI/Agent                    App (self-hosted)              Provider (auth.sigil
 
 Every secret value is **AES-256-GCM** encrypted before storage. Each write generates a random 12-byte IV. The encryption key is either:
 
-- `ENCRYPTION_KEY` — 32 random bytes, base64-encoded (`openssl rand -base64 32`)
+- `ENCRYPTION_KEY`: 32 random bytes, base64-encoded (`openssl rand -base64 32`)
 - Derived from `BETTER_AUTH_SECRET` via SHA-256 (default if `ENCRYPTION_KEY` is not set)
 
-Secrets are stored as an **append-only event log** — current values are derived by replaying events. This gives you a full audit trail of every change with user/token attribution.
+Secrets are stored as an **append-only event log**. Current values are derived by replaying events. This gives you a full audit trail of every change with user/token attribution.
 
 </details>
 
