@@ -38,13 +38,23 @@
     "prismjs": "^1.29.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "spiceflow": "workspace:^",
+    "spiceflow": "^1.18.0",
     "superjson": "^2.2.6",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2",
     "ulid": "latest",
     "vaul": "^1.1.2",
     "zod": "latest"
+  },
+  "cloudflare": {
+    "bindings": {
+      "BETTER_AUTH_SECRET": {
+        "description": "Random string for signing auth sessions. Generate with `openssl rand -base64 32`."
+      },
+      "ENCRYPTION_KEY": {
+        "description": "**Optional.** AES-256-GCM encryption key for secrets at rest. Generate with `openssl rand -base64 32`. If omitted, derived from BETTER_AUTH_SECRET."
+      }
+    }
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.31.2",
