@@ -38,7 +38,7 @@
     "prismjs": "^1.29.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "spiceflow": "^1.18.0",
+    "spiceflow": "1.20.0-rsc.1",
     "superjson": "^2.2.6",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2",
@@ -49,10 +49,10 @@
   "cloudflare": {
     "bindings": {
       "BETTER_AUTH_SECRET": {
-        "description": "Random string for signing auth sessions. Generate with `openssl rand -base64 32`."
+        "description": "Any random string used to sign auth sessions and cookies. No length or format requirement. Generate with `openssl rand -base64 32`."
       },
       "ENCRYPTION_KEY": {
-        "description": "**Optional.** AES-256-GCM encryption key for secrets at rest. Generate with `openssl rand -base64 32`. If omitted, derived from BETTER_AUTH_SECRET."
+        "description": "**Optional.** Must be exactly 32 bytes, base64-encoded (44 characters). Used for AES-256-GCM encryption of secrets at rest. Generate with `openssl rand -base64 32`. If omitted, a key is derived from BETTER_AUTH_SECRET automatically."
       }
     }
   },
