@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm --filter sigillo-app build",
+    "deploy": "wrangler d1 migrations apply DB --remote --config app/wrangler.jsonc && wrangler deploy --config app/wrangler.jsonc"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -11,9 +13,6 @@
       "sharp",
       "workerd"
     ],
-    "overrides": {
-      "spiceflow": "workspace:^"
-    },
     "ignoredBuiltDependencies": [
       "esbuild",
       "sharp",

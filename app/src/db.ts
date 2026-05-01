@@ -143,9 +143,10 @@ export async function ensureOAuthClient(request: Request): Promise<string> {
     return cachedClientId
   }
 
-  if (host.endsWith('.workers.dev')) {
-    throw new Error(`Refusing OAuth registration for temporary host: ${host}`)
-  }
+  // Allow *.workers.dev hosts so self-hosters can use the app immediately
+  // after deploying via the "Deploy to Cloudflare" button, before adding a
+  // custom domain. The Cache API (memoize) won't work on *.workers.dev but
+  // auth and the rest of the app function correctly.
 
   const origin = getRequestOrigin(request)
   const callbackUrl = new URL('/api/auth/oauth2/callback/sigillo', origin).toString()
