@@ -27,7 +27,7 @@ import { createTokenAction, deleteTokenAction } from "../actions.ts"
 
 
 export function TokensPage() {
-  const { projectName, projectId, environments, tokens } = useLoaderData('/projects/:projectId/tokens')
+  const { projectName, projectId, environments, tokens } = useLoaderData('/dash/projects/:projectId/tokens')
   const [createOpen, setCreateOpen] = useState(false)
 
   return (
@@ -66,7 +66,7 @@ export function TokensPage() {
 }
 
 function TokensTable() {
-  const { tokens } = useLoaderData('/projects/:projectId/tokens')
+  const { tokens } = useLoaderData('/dash/projects/:projectId/tokens')
   return (
     <Frame className="w-full">
       <Table className="table-fixed">
