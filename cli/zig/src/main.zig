@@ -1181,12 +1181,12 @@ fn requireEnvironmentContext(allocator: std.mem.Allocator, stderr: Writer, cwd: 
 
 fn requirePlainSecretForceInAgent(allocator: std.mem.Allocator, stderr: Writer, force: bool) !void {
     if (force) return;
-    if (!std.posix.isatty(File.stdout().handle)) return;
+    const stdout_is_tty = std.posix.isatty(File.stdout().handle);
 
     var env_map = try std.process.getEnvMap(allocator);
     defer env_map.deinit();
     const agent_name = detectAgentNameFromEnvMap(&env_map);
-    if (shouldBlockPlainSecretOutput(force, true, agent_name)) {
+    if (shouldBlockPlainSecretOutput(force, stdout_is_tty, agent_name)) {
         try color.err(stderr, "error");
         try stderr.writeAll(": printing secret values into an agent context is discouraged\n");
         try stderr.print("  detected agent shell: {s}\n", .{agent_name.?});
@@ -1194,7 +1194,7 @@ fn requirePlainSecretForceInAgent(allocator: std.mem.Allocator, stderr: Writer, 
         try stderr.writeAll("  Prefer chaining the command that needs secrets through Sigillo, so values never enter chat context:\n");
         try stderr.writeAll("    sigillo run --command 'your-command \"$DATABASE_URL\"'\n");
         try stderr.writeAll("\n");
-        try stderr.writeAll("  Piping stdout is allowed because values go directly to the next process:\n");
+        try stderr.writeAll("  Piped stdout is allowed because values go directly to the next process:\n");
         try stderr.writeAll("    sigillo secrets download --format env | fly secrets import --app my-app\n");
         try stderr.writeAll("\n");
         try stderr.writeAll("  If you really need to inspect secrets as a last resort, rerun with --force.\n");
@@ -2046,7 +2046,7 @@ test "agent detection follows std-env environment markers" {
     try std.testing.expectEqualStrings("custom-agent", detectAgentNameFromEnvMap(&env_map).?);
 }
 
-test "agent guard allows piped stdout and force" {
+test "agent guard only blocks terminal output" {
     try std.testing.expect(shouldBlockPlainSecretOutput(false, true, "codex"));
     try std.testing.expect(!shouldBlockPlainSecretOutput(false, false, "codex"));
     try std.testing.expect(!shouldBlockPlainSecretOutput(true, true, "codex"));
