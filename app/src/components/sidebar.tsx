@@ -48,14 +48,6 @@ import {
 import { createProjectAction } from "../actions.ts";
 import { authClient } from "../auth-client.ts";
 
-type SidebarContentProps = {
-  orgs: { id: string; name: string; role: string }[];
-  projects: { id: string; name: string; firstEnvSlug: string | null }[];
-  currentOrgId: string | null;
-  currentProjectId: string | null;
-  user: { name: string; email: string; image?: string | null } | null;
-};
-
 // ── Shared sidebar content ─────────────────────────────────────
 // Used by both the desktop aside and the mobile drawer so the org
 // switcher, project list, and user footer are defined once.
@@ -63,13 +55,14 @@ type SidebarContentProps = {
 // itself when the user taps a link.
 
 function SidebarContent({
-  orgs,
-  projects,
-  currentOrgId,
-  currentProjectId,
-  user,
   onNavigate,
-}: SidebarContentProps & { onNavigate?: () => void }) {
+}: { onNavigate?: () => void }) {
+  const { orgs, user } = useLoaderData('/dash/*');
+  const orgData = useLoaderData('/dash/orgs/:orgId');
+  const projectData = useLoaderData('/dash/projects/:projectId/*');
+  const projects = projectData.projects ?? orgData.projects ?? [];
+  const currentOrgId = projectData.orgId ?? orgData.orgId ?? null;
+  const currentProjectId = projectData.projectId ?? null;
   const [showNewProject, setShowNewProject] = useState(false);
 
   const currentOrg = orgs.find((o) => o.id === currentOrgId);
@@ -194,15 +187,7 @@ function SidebarContent({
             )}
           >
             <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground font-medium text-xs">
-              {user?.image ? (
-                <img
-                  src={user.image}
-                  alt=""
-                  className="size-8 rounded-lg object-cover"
-                />
-              ) : (
-                userInitials
-              )}
+              {userInitials}
             </div>
             <div className="grid flex-1 text-left leading-tight min-w-0">
               <span className="truncate font-medium text-sm">
@@ -219,15 +204,7 @@ function SidebarContent({
             {/* User info header */}
             <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground font-medium text-xs">
-                {user?.image ? (
-                  <img
-                    src={user.image}
-                    alt=""
-                    className="size-8 rounded-lg object-cover"
-                  />
-                ) : (
-                  userInitials
-                )}
+                {userInitials}
               </div>
               <div className="grid flex-1 leading-tight min-w-0">
                 <span className="truncate font-medium text-sm">
@@ -264,24 +241,10 @@ function SidebarContent({
 
 // ── Desktop sidebar ────────────────────────────────────────────
 
-function useSidebarContentProps(): SidebarContentProps {
-  const { orgs, user } = useLoaderData('/dash/*');
-  const orgData = useLoaderData('/dash/orgs/:orgId');
-  const projectData = useLoaderData('/dash/projects/:projectId/*');
-  return {
-    orgs,
-    projects: projectData.projects ?? orgData.projects ?? [],
-    currentOrgId: projectData.orgId ?? orgData.orgId ?? null,
-    currentProjectId: projectData.projectId ?? null,
-    user,
-  };
-}
-
 export function Sidebar() {
-  const props = useSidebarContentProps();
   return (
     <aside className="hidden md:flex flex-col w-72 self-stretch min-h-0 border-r border-sidebar-border bg-background text-foreground p-6">
-      <SidebarContent {...props} />
+      <SidebarContent />
     </aside>
   );
 }
@@ -292,7 +255,6 @@ export function Sidebar() {
 // MobileMenuButton in the Navbar (which lives in a different layout level).
 
 export function MobileDrawer() {
-  const props = useSidebarContentProps();
   const [open, setOpen] = useState(false);
 
   // Listen for toggle events from MobileMenuButton
@@ -311,7 +273,7 @@ export function MobileDrawer() {
           aria-describedby={undefined}
         >
           <Drawer.Title className="sr-only">Navigation</Drawer.Title>
-          <SidebarContent {...props} onNavigate={() => setOpen(false)} />
+          <SidebarContent onNavigate={() => setOpen(false)} />
         </Drawer.Content>
       </Drawer.Portal>
     </Drawer.Root>
