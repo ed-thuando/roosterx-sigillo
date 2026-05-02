@@ -134,7 +134,7 @@ describe('sigillo cli e2e', () => {
     })
   }, 60_000)
 
-  test('blocks plain secret output in agent shells unless forced', async () => {
+  test('allows piped plain secret output in agent shells', async () => {
     const agentContext = {
       ...cliContext,
       env: {
@@ -143,25 +143,13 @@ describe('sigillo cli e2e', () => {
       },
     }
 
-    const blockedGet = await runCli({ args: ['secrets', 'get', cliContext.secretName], context: agentContext })
-    expect(blockedGet.status).toBe(1)
-    expect(blockedGet.stdout).toBe('')
-    expect(blockedGet.stderr).toContain('reading secret values into an agent context is discouraged')
-    expect(blockedGet.stderr).toContain('sigillo run --command')
-    expect(blockedGet.stderr).toContain('--force')
+    const get = await runCli({ args: ['secrets', 'get', cliContext.secretName], context: agentContext })
+    expect(get.status).toBe(0)
+    expect(get.stdout).toContain(`value: "${cliContext.secretValue}"`)
 
-    const forcedGet = await runCli({ args: ['secrets', 'get', cliContext.secretName, '--force'], context: agentContext })
-    expect(forcedGet.status).toBe(0)
-    expect(forcedGet.stdout).toContain(`value: "${cliContext.secretValue}"`)
-
-    const blockedDownload = await runCli({ args: ['secrets', 'download', '--format', 'json'], context: agentContext })
-    expect(blockedDownload.status).toBe(1)
-    expect(blockedDownload.stdout).toBe('')
-    expect(blockedDownload.stderr).toContain('reading secret values into an agent context is discouraged')
-
-    const forcedDownload = await runCli({ args: ['secrets', 'download', '--format', 'json', '--force'], context: agentContext })
-    expect(forcedDownload.status).toBe(0)
-    expect(JSON.parse(forcedDownload.stdout)).toMatchObject({
+    const download = await runCli({ args: ['secrets', 'download', '--format', 'json'], context: agentContext })
+    expect(download.status).toBe(0)
+    expect(JSON.parse(download.stdout)).toMatchObject({
       [cliContext.secretName]: cliContext.secretValue,
     })
   }, 60_000)

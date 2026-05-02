@@ -1181,23 +1181,29 @@ fn requireEnvironmentContext(allocator: std.mem.Allocator, stderr: Writer, cwd: 
 
 fn requirePlainSecretForceInAgent(allocator: std.mem.Allocator, stderr: Writer, force: bool) !void {
     if (force) return;
+    if (!std.posix.isatty(File.stdout().handle)) return;
 
     var env_map = try std.process.getEnvMap(allocator);
     defer env_map.deinit();
-    if (detectAgentNameFromEnvMap(&env_map)) |agent_name| {
+    const agent_name = detectAgentNameFromEnvMap(&env_map);
+    if (shouldBlockPlainSecretOutput(force, true, agent_name)) {
         try color.err(stderr, "error");
-        try stderr.writeAll(": reading secret values into an agent context is discouraged\n");
-        try stderr.print("  detected agent shell: {s}\n", .{agent_name});
+        try stderr.writeAll(": printing secret values into an agent context is discouraged\n");
+        try stderr.print("  detected agent shell: {s}\n", .{agent_name.?});
         try stderr.writeAll("\n");
         try stderr.writeAll("  Prefer chaining the command that needs secrets through Sigillo, so values never enter chat context:\n");
         try stderr.writeAll("    sigillo run --command 'your-command \"$DATABASE_URL\"'\n");
         try stderr.writeAll("\n");
-        try stderr.writeAll("  For tools that read secrets from stdin, pipe directly and add --force intentionally:\n");
-        try stderr.writeAll("    sigillo secrets download --format env --force | fly secrets import --app my-app\n");
+        try stderr.writeAll("  Piping stdout is allowed because values go directly to the next process:\n");
+        try stderr.writeAll("    sigillo secrets download --format env | fly secrets import --app my-app\n");
         try stderr.writeAll("\n");
         try stderr.writeAll("  If you really need to inspect secrets as a last resort, rerun with --force.\n");
         std.process.exit(1);
     }
+}
+
+fn shouldBlockPlainSecretOutput(force: bool, stdout_is_tty: bool, agent_name: ?[]const u8) bool {
+    return !force and stdout_is_tty and agent_name != null;
 }
 
 fn detectAgentNameFromEnvMap(env_map: *const std.process.EnvMap) ?[]const u8 {
@@ -2038,6 +2044,13 @@ test "agent detection follows std-env environment markers" {
 
     try env_map.put("AI_AGENT", "custom-agent");
     try std.testing.expectEqualStrings("custom-agent", detectAgentNameFromEnvMap(&env_map).?);
+}
+
+test "agent guard allows piped stdout and force" {
+    try std.testing.expect(shouldBlockPlainSecretOutput(false, true, "codex"));
+    try std.testing.expect(!shouldBlockPlainSecretOutput(false, false, "codex"));
+    try std.testing.expect(!shouldBlockPlainSecretOutput(true, true, "codex"));
+    try std.testing.expect(!shouldBlockPlainSecretOutput(false, true, null));
 }
 
 test "redaction handles repeated and multiple secret values" {
