@@ -108,7 +108,7 @@ export function ProjectPage() {
     selectedEnvId,
     secrets,
     showBanner,
-  } = useLoaderData('/projects/:projectId/envs/:envSlug');
+  } = useLoaderData('/dash/projects/:projectId/envs/:envSlug');
   const [allVisible, setAllVisible] = useState(false);
 
   return (
@@ -125,9 +125,9 @@ export function ProjectPage() {
           <Select
             defaultValue={selectedEnvId || ""}
             onValueChange={(val: string | null) => {
-              if (!val) return
+              if (!val || !projectId) return
               const env = environments.find((e) => e.id === val);
-              if (env) router.push(router.href('/projects/:projectId/envs/:envSlug', { projectId, envSlug: env.slug }));
+              if (env) router.push(router.href('/dash/projects/:projectId/envs/:envSlug', { projectId, envSlug: env.slug }));
             }}
           >
             <SelectTrigger size="sm" className="w-auto min-w-40">

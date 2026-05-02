@@ -15,6 +15,7 @@ import * as orm from 'drizzle-orm'
 import type { BatchItem } from 'drizzle-orm/batch'
 import { schema } from 'db'
 import { getActionRequest, redirect } from 'spiceflow'
+import { router } from 'spiceflow/react'
 import {
   getDb, getSession,
   requireOrgMember,
@@ -61,7 +62,7 @@ export async function createProjectAction({ name, orgId }: { name: string; orgId
       db.insert(schema.environment).values({ projectId, name: e.name, slug: e.slug }),
     ),
   ] as const)
-  throw redirect(`/projects/${proj!.id}`)
+  throw redirect(router.href('/dash/projects/:projectId', { projectId: proj!.id }))
 }
 
 // All secret mutations append to the secretEvent log. Never update or delete events.
@@ -218,7 +219,7 @@ export async function acceptInviteAction({ invitationId }: { invitationId: strin
     .values({ orgId: invite.orgId, userId: session.userId, role: invite.role })
     .onConflictDoNothing({ target: [schema.orgMember.orgId, schema.orgMember.userId] })
     .returning({ id: schema.orgMember.id })
-  throw redirect(`/orgs/${invite.orgId}`)
+  throw redirect(router.href('/dash/orgs/:orgId', { orgId: invite.orgId }))
 }
 
 export async function updateOrgMemberRoleAction({ memberId, role }: {
@@ -382,7 +383,7 @@ export async function createOrgAction({ name }: { name: string }) {
     db.insert(schema.org).values({ id: orgId, name }).returning({ id: schema.org.id, name: schema.org.name }),
     db.insert(schema.orgMember).values({ orgId, userId: session.userId, role: 'admin' }),
   ] as const)
-  throw redirect(`/orgs/${org!.id}`)
+  throw redirect(router.href('/dash/orgs/:orgId', { orgId: org!.id }))
 }
 
 export async function deleteOrgAction({ orgId }: { orgId: string }) {
@@ -393,5 +394,5 @@ export async function deleteOrgAction({ orgId }: { orgId: string }) {
   // Cascade deletes handle orgMembers, invitations, projects, environments,
   // secretEvents, and apiTokens automatically via foreign key constraints.
   await db.delete(schema.org).where(orm.eq(schema.org.id, orgId))
-  throw redirect('/')
+  throw redirect(router.href('/'))
 }
