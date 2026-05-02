@@ -216,7 +216,7 @@ export async function getAuth(request: Request) {
           },
         ],
       }),
-      deviceAuthorization({ verificationUri: '/device' }),
+      deviceAuthorization({ verificationUri: '/device', schema: {} }),
       bearer(),
     ],
   })
