@@ -331,11 +331,11 @@ sigillo secrets download --format json    # download as JSON
 sigillo secrets download --format env     # download as .env
 ```
 
-Inside AI agent shells, `secrets get` and `secrets download` refuse to print raw values unless you pass `--force`. Prefer `sigillo run` or a direct pipe so secret values go straight to the tool that needs them, not into the chat context.
+Inside AI agent shells, `secrets get` and `secrets download` refuse to print raw values to a terminal unless you pass `--force`. Prefer `sigillo run` or a direct pipe so secret values go straight to the tool that needs them, not into the chat context.
 
 ```bash
 sigillo run --command 'psql "$DATABASE_URL" -c "select 1"'
-sigillo secrets download --format env --force | fly secrets import --app my-app
+sigillo secrets download --format env | fly secrets import --app my-app
 ```
 
 ### `sigillo projects`
