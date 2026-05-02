@@ -111,7 +111,7 @@ function SidebarContent({
           {orgs.map((org) => (
             <DropdownMenuLinkItem
               key={org.id}
-              href={router.href('/orgs/:orgId', { orgId: org.id })}
+              href={router.href('/dash/orgs/:orgId', { orgId: org.id })}
               onClick={onNavigate}
             >
               <div className="flex size-6 items-center justify-center rounded-md border">
@@ -124,7 +124,7 @@ function SidebarContent({
             </DropdownMenuLinkItem>
           ))}
           <DropdownMenuSeparator />
-          <DropdownMenuLinkItem href={router.href('/new-org')} onClick={onNavigate}>
+          <DropdownMenuLinkItem href={router.href('/dash/new-org')} onClick={onNavigate}>
             <div className="flex size-6 items-center justify-center rounded-md border bg-transparent">
               <PlusIcon className="size-4" />
             </div>
@@ -147,8 +147,8 @@ function SidebarContent({
           {projects.map((project) => {
             const isActive = currentProjectId === project.id;
             const href = project.firstEnvSlug
-              ? router.href('/projects/:projectId/envs/:envSlug', { projectId: project.id, envSlug: project.firstEnvSlug })
-              : router.href('/projects/:projectId', { projectId: project.id })
+              ? router.href('/dash/projects/:projectId/envs/:envSlug', { projectId: project.id, envSlug: project.firstEnvSlug })
+              : router.href('/dash/projects/:projectId', { projectId: project.id })
             return (
               <Link
                 key={project.id}
@@ -265,22 +265,20 @@ function SidebarContent({
 // ── Desktop sidebar ────────────────────────────────────────────
 
 function useSidebarContentProps(): SidebarContentProps {
-  const { orgs, projects, orgId, projectId, user } = useLoaderData('/projects/:projectId/*');
+  const { orgs, user } = useLoaderData('/dash/*');
+  const orgData = useLoaderData('/dash/orgs/:orgId');
+  const projectData = useLoaderData('/dash/projects/:projectId/*');
   return {
     orgs,
-    projects,
-    currentOrgId: orgId,
-    currentProjectId: projectId,
+    projects: projectData.projects ?? orgData.projects ?? [],
+    currentOrgId: projectData.orgId ?? orgData.orgId ?? null,
+    currentProjectId: projectData.projectId ?? null,
     user,
   };
 }
 
 export function Sidebar() {
   const props = useSidebarContentProps();
-  return <SidebarWithProps {...props} />;
-}
-
-export function SidebarWithProps(props: SidebarContentProps) {
   return (
     <aside className="hidden md:flex flex-col w-72 self-stretch min-h-0 border-r border-sidebar-border bg-background text-foreground p-6">
       <SidebarContent {...props} />
@@ -295,10 +293,6 @@ export function SidebarWithProps(props: SidebarContentProps) {
 
 export function MobileDrawer() {
   const props = useSidebarContentProps();
-  return <MobileDrawerWithProps {...props} />;
-}
-
-export function MobileDrawerWithProps(props: SidebarContentProps) {
   const [open, setOpen] = useState(false);
 
   // Listen for toggle events from MobileMenuButton

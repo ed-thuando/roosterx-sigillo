@@ -110,7 +110,7 @@ export function SecretsTable({
 }: {
   allVisible: boolean;
 }) {
-  const { secrets, selectedEnvId: environmentId, environments, allSecretNames } = useLoaderData('/projects/:projectId/envs/:envSlug');
+  const { secrets, selectedEnvId: environmentId, environments, allSecretNames } = useLoaderData('/dash/projects/:projectId/envs/:envSlug');
   const [newSecrets, setNewSecrets] = useState<Array<{ id: string; name: string; value: string }>>([]);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);

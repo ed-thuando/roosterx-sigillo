@@ -143,7 +143,7 @@ const envSchema = z.object({ name: z.string().min(1, "Name is required"), slug: 
 const envFields = envSchema.keyof().enum;
 
 export function EnvironmentsPage() {
-  const { projectName } = useLoaderData('/projects/:projectId/environments');
+  const { projectName } = useLoaderData('/dash/projects/:projectId/environments');
 
   return (
     <div className="flex flex-col gap-3 w-full">
@@ -156,7 +156,7 @@ export function EnvironmentsPage() {
 }
 
 export function EnvironmentsTable() {
-  const { environments, projectId } = useLoaderData('/projects/:projectId/environments');
+  const { environments, projectId } = useLoaderData('/dash/projects/:projectId/environments');
   const [showNewRow, setShowNewRow] = useState(false);
 
   const columns: ColumnDef<Environment>[] = [

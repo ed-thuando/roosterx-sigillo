@@ -21,7 +21,7 @@ import {
 import { deleteOrgAction } from '../actions.ts'
 
 export function SettingsPage() {
-  const { orgId, orgName, projectNames } = useLoaderData('/projects/:projectId/settings')
+  const { orgId, orgName, projectNames } = useLoaderData('/dash/projects/:projectId/settings')
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
