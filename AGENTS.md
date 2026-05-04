@@ -225,9 +225,8 @@ those platforms. Only CI can produce a correct release.
 
 To release:
 
-1. Bump the version in `cli/package.json`
-2. Update `cli/CHANGELOG.md` with the new version and changes
-3. Commit and push to `main`
+1. Add a `.changeset/*.md` file describing the changes (load `changesets` skill for format)
+2. Commit and push to `main`
 4. GitHub Actions CI (`cli-ci.yml`) builds all artifacts and publishes
 5. CI auto-creates the GitHub release at tag `sigillo@x.y.z` and uploads
    platform archives. You do NOT need to create the release manually.
