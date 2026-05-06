@@ -119,7 +119,7 @@ sigillo secrets get DATABASE_URL -c dev | sigillo secrets set DATABASE_URL -c pr
 
 The same pattern works for any secret copy — between environments, or when seeding a new environment from an existing one.
 
-### Never read `.env` files directly
+### Never read `.env` files or `~/.sigillo/config.json`
 
 If a `.env` file exists, do not source it or read its contents. Use `sigillo run` instead:
 
@@ -129,6 +129,12 @@ source .env && next dev
 
 # secrets injected, never visible to the agent
 sigillo run -- next dev
+```
+
+**Never read `~/.sigillo/config.json` directly.** It contains auth tokens and project bindings. Use `sigillo me` to check the current auth status, org, and project setup:
+
+```bash
+sigillo me
 ```
 
 ### Put `sigillo run` inside package scripts
