@@ -196,6 +196,11 @@ export async function getAuth(request: Request) {
     secret: env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(db, { provider: 'sqlite' }),
     trustedOrigins: Array.from(new Set(trustedOrigins)),
+    // Enable email/password signup in tests so tests can create users via
+    // auth.api.signUpEmail() and get bearer tokens without needing the
+    // OAuth provider. No-op in production since the UI only shows genericOAuth.
+    // VITEST var is set in wrangler.test.jsonc, propagated to process.env by nodejs_compat.
+    emailAndPassword: { enabled: !!process.env.VITEST },
     session: {
       cookieCache: {
         enabled: true,
@@ -218,6 +223,7 @@ export async function getAuth(request: Request) {
       }),
       deviceAuthorization({ verificationUri: '/device', schema: {} }),
       bearer(),
+
     ],
   })
 }

@@ -5,7 +5,7 @@
     "outDir": "dist",
     "noEmit": true,
     "lib": ["ESNext", "DOM"],
-    "types": [],
+    "types": ["@cloudflare/vitest-pool-workers/types"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "customConditions": ["workerd"],
