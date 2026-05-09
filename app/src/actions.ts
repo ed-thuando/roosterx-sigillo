@@ -71,13 +71,16 @@ export async function deleteSecretAction({ name, environmentIds }: {
   name: string
   environmentIds: string[]
 }) {
-  if (!environmentIds.length) throw new Error('No environments selected')
+  const unique = Array.from(new Set(environmentIds))
+  if (!unique.length) throw new Error('No environments selected')
   const session = await requireSession()
-  const orgId = await getOrgIdForEnvironment(environmentIds[0]!)
-  if (!orgId) throw new Error('Environment not found')
+  const orgIds = await Promise.all(unique.map((id) => getOrgIdForEnvironment(id)))
+  const orgId = orgIds[0]
+  if (!orgId || orgIds.some((id) => !id)) throw new Error('Environment not found')
+  if (orgIds.some((id) => id !== orgId)) throw new Error('All environments must belong to the same organization')
   await requireOrgMember(session.userId, orgId)
   const db = getDb()
-  const queries: BatchItem<'sqlite'>[] = environmentIds.map((envId) =>
+  const queries: BatchItem<'sqlite'>[] = unique.map((envId) =>
     db.insert(schema.secretEvent).values({
       environmentId: envId, name, operation: 'delete', userId: session.userId,
     }),
