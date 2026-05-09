@@ -473,13 +473,15 @@ export function SecretsTable({
         currentEnvironmentId={environmentId}
       />
 
-      <DeleteFromEnvsDialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        secretName={deleteTarget?.name ?? ""}
-        environments={environments}
-        currentEnvId={environmentId}
-      />
+      {deleteTarget && (
+        <DeleteFromEnvsDialog
+          open
+          onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+          secretName={deleteTarget.name}
+          environments={environments}
+          currentEnvId={environmentId}
+        />
+      )}
 
       <SaveToEnvsDialog
         open={saveOpen}
