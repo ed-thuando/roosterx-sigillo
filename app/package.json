@@ -9,7 +9,7 @@
     "./src/*": "./src/*"
   },
   "scripts": {
-    "dev": "pnpm db:migrate:local && tuistory launch -s sigillo-app-dev --attach 'vite dev'",
+    "dev": "pnpm db:migrate:local && tuistory launch -s sigillo-app-dev --attach 'pnpm vite dev'",
     "prebuild": "pnpm generate:install",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
@@ -17,8 +17,8 @@
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:prod": "echo \"D1 pre-migration timestamp: $(date +%s)\" && wrangler d1 migrations apply DB --remote",
     "db:migrate:preview": "echo \"D1 pre-migration timestamp: $(date +%s)\" && wrangler d1 migrations apply DB --remote --env preview",
-    "deployment": "pnpm db:migrate:preview && CLOUDFLARE_ENV=preview vite build && wrangler deploy --env preview",
-    "deployment:prod": "pnpm db:migrate:prod && vite build && wrangler deploy",
+    "deployment": "pnpm db:migrate:preview && CLOUDFLARE_ENV=preview pnpm build && wrangler deploy --env preview",
+    "deployment:prod": "pnpm db:migrate:prod && pnpm build && wrangler deploy",
     "openapi": "tsx src/generate-openapi.ts",
     "generate:install": "tsx src/generate-install-script.ts"
   },
@@ -38,7 +38,7 @@
     "prismjs": "^1.29.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "spiceflow": "1.23.1-rsc.0",
+    "spiceflow": "1.24.1-rsc.0",
     "superjson": "^2.2.6",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.2",
@@ -57,7 +57,7 @@
     }
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.31.2",
+    "@cloudflare/vite-plugin": "^1.36.3",
     "@cloudflare/vitest-pool-workers": "^0.16.0",
     "@types/node": "^25.6.0",
     "@types/prismjs": "^1.26.6",
