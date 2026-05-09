@@ -67,18 +67,23 @@ export async function createProjectAction({ name, orgId }: { name: string; orgId
 
 // All secret mutations append to the secretEvent log. Never update or delete events.
 
-export async function deleteSecretAction({ name, environmentId }: {
+export async function deleteSecretAction({ name, environmentIds }: {
   name: string
-  environmentId: string
+  environmentIds: string[]
 }) {
+  if (!environmentIds.length) throw new Error('No environments selected')
   const session = await requireSession()
-  const orgId = await getOrgIdForEnvironment(environmentId)
+  const orgId = await getOrgIdForEnvironment(environmentIds[0]!)
   if (!orgId) throw new Error('Environment not found')
   await requireOrgMember(session.userId, orgId)
   const db = getDb()
-  await db.insert(schema.secretEvent).values({
-    environmentId, name, operation: 'delete', userId: session.userId,
-  })
+  const queries: BatchItem<'sqlite'>[] = environmentIds.map((envId) =>
+    db.insert(schema.secretEvent).values({
+      environmentId: envId, name, operation: 'delete', userId: session.userId,
+    }),
+  )
+  const [first, ...rest] = queries
+  if (first) await db.batch([first, ...rest])
 }
 
 // Save edited secrets to the current environment and optionally apply

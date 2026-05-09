@@ -117,6 +117,7 @@ export function SecretsTable({
   const [importOpen, setImportOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ name: string } | null>(null);
 
   // Per-row visibility overrides (only used when allVisible is false)
   const [rowVisible, setRowVisible] = useState<Record<string, boolean>>({});
@@ -316,15 +317,7 @@ export function SecretsTable({
                   </TableCell>
                   <TableCell className="p-0">
                     <button
-                      onClick={async () => {
-                        if (confirm(`Delete secret "${secret.name}"?`)) {
-                          try {
-                            await deleteSecretAction({ name: secret.name, environmentId });
-                          } catch (e: any) {
-                            alert(e?.message || "Failed to delete secret");
-                          }
-                        }
-                      }}
+                      onClick={() => setDeleteTarget({ name: secret.name })}
                       className="text-muted-foreground hover:text-destructive cursor-pointer"
                       title="Delete secret"
                     >
@@ -480,6 +473,14 @@ export function SecretsTable({
         currentEnvironmentId={environmentId}
       />
 
+      <DeleteFromEnvsDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        secretName={deleteTarget?.name ?? ""}
+        environments={environments}
+        currentEnvId={environmentId}
+      />
+
       <SaveToEnvsDialog
         open={saveOpen}
         onOpenChange={setSaveOpen}
@@ -569,6 +570,119 @@ function ImportEnvDialog({
   );
 }
 
+// Shared environment checkbox list used by save and delete dialogs.
+// Current env is always checked and disabled, others are toggleable.
+function useEnvSelection(environments: Environment[], currentEnvId: string) {
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const toggle = (id: string) => setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
+  const selectedIds = [
+    currentEnvId,
+    ...environments.filter((e) => e.id !== currentEnvId && checked[e.id]).map((e) => e.id),
+  ];
+  return { checked, toggle, selectedIds };
+}
+
+function EnvCheckboxList({
+  environments,
+  currentEnvId,
+  checked,
+  onToggle,
+}: {
+  environments: Environment[];
+  currentEnvId: string;
+  checked: Record<string, boolean>;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div className="px-6 pb-2 flex flex-col gap-1.5">
+      {environments.map((env) => {
+        const isCurrent = env.id === currentEnvId;
+        const isChecked = isCurrent || (checked[env.id] ?? false);
+        return (
+          <label
+            key={env.id}
+            className={cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 cursor-pointer transition-colors",
+              isChecked ? "bg-primary/5" : "hover:bg-muted/50",
+              isCurrent && "opacity-80",
+            )}
+          >
+            <span
+              className={cn(
+                "flex items-center justify-center size-4 rounded border transition-colors",
+                isChecked ? "bg-primary border-primary text-primary-foreground" : "border-input",
+              )}
+              aria-hidden
+            >
+              {isChecked && <CheckIcon className="size-3" />}
+            </span>
+            <input
+              type="checkbox"
+              checked={isChecked}
+              disabled={isCurrent}
+              onChange={() => onToggle(env.id)}
+              className="sr-only"
+            />
+            <span className="text-sm font-medium">{env.name}</span>
+            {isCurrent && <span className="text-xs text-muted-foreground ml-auto">current</span>}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function DeleteFromEnvsDialog({
+  open,
+  onOpenChange,
+  secretName,
+  environments,
+  currentEnvId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  secretName: string;
+  environments: Environment[];
+  currentEnvId: string;
+}) {
+  const { checked, toggle, selectedIds } = useEnvSelection(environments, currentEnvId);
+  const [deleting, setDeleting] = useState(false);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>Delete "{secretName}"</DialogTitle>
+          <DialogDescription>
+            Choose which environments to remove this secret from.
+          </DialogDescription>
+        </DialogHeader>
+        <EnvCheckboxList environments={environments} currentEnvId={currentEnvId} checked={checked} onToggle={toggle} />
+        <DialogFooter variant="bare" className="px-6 pb-4 pt-2">
+          <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+          <Button
+            variant="destructive"
+            loading={deleting}
+            onClick={async () => {
+              setDeleting(true);
+              try {
+                await deleteSecretAction({ name: secretName, environmentIds: selectedIds });
+                onOpenChange(false);
+              } catch (e: any) {
+                alert(e?.message || "Failed to delete secret");
+              } finally {
+                setDeleting(false);
+              }
+            }}
+          >
+            Delete from {selectedIds.length} environment{selectedIds.length > 1 ? "s" : ""}
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
 function SaveToEnvsDialog({
   open,
   onOpenChange,
@@ -586,15 +700,7 @@ function SaveToEnvsDialog({
   saving: boolean;
   onSave: (envIds: string[]) => Promise<void>;
 }) {
-  const [checked, setChecked] = useState<Record<string, boolean>>({});
-
-  // Current env is always first and checked, others default to unchecked
-  const toggle = (id: string) => setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
-
-  const selectedIds = [
-    currentEnvId,
-    ...environments.filter((e) => e.id !== currentEnvId && checked[e.id]).map((e) => e.id),
-  ];
+  const { checked, toggle, selectedIds } = useEnvSelection(environments, currentEnvId);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -606,41 +712,7 @@ function SaveToEnvsDialog({
             Secrets are matched by name — missing keys will be created.
           </DialogDescription>
         </DialogHeader>
-        <div className="px-6 pb-2 flex flex-col gap-1.5">
-          {environments.map((env) => {
-            const isCurrent = env.id === currentEnvId;
-            const isChecked = isCurrent || (checked[env.id] ?? false);
-            return (
-              <label
-                key={env.id}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 cursor-pointer transition-colors",
-                  isChecked ? "bg-primary/5" : "hover:bg-muted/50",
-                  isCurrent && "opacity-80",
-                )}
-              >
-                <span
-                  className={cn(
-                    "flex items-center justify-center size-4 rounded border transition-colors",
-                    isChecked ? "bg-primary border-primary text-primary-foreground" : "border-input",
-                  )}
-                  aria-hidden
-                >
-                  {isChecked && <CheckIcon className="size-3" />}
-                </span>
-                <input
-                  type="checkbox"
-                  checked={isChecked}
-                  disabled={isCurrent}
-                  onChange={() => toggle(env.id)}
-                  className="sr-only"
-                />
-                <span className="text-sm font-medium">{env.name}</span>
-                {isCurrent && <span className="text-xs text-muted-foreground ml-auto">current</span>}
-              </label>
-            );
-          })}
-        </div>
+        <EnvCheckboxList environments={environments} currentEnvId={currentEnvId} checked={checked} onToggle={toggle} />
         <DialogFooter variant="bare" className="px-6 pb-4 pt-2">
           <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
           <Button loading={saving} onClick={() => onSave(selectedIds)}>
