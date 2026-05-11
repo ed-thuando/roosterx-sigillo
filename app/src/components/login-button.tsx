@@ -12,8 +12,8 @@ export function LoginButton({ callbackURL = "/" }: { callbackURL?: string }) {
 
   async function handleSignIn() {
     setLoading(true)
-    await authClient.signIn.oauth2({
-      providerId: "sigillo",
+    await authClient.signIn.social({
+      provider: "sigillo",
       callbackURL,
     })
   }

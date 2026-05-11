@@ -18,10 +18,10 @@
     "deployment:prod": "pnpm db:migrate:prod && pnpm build && wrangler deploy"
   },
   "dependencies": {
-    "@better-auth/drizzle-adapter": "https://pkg.pr.new/better-auth/better-auth/@better-auth/drizzle-adapter@6913",
+    "@better-auth/drizzle-adapter": "https://pkg.pr.new/@better-auth/drizzle-adapter@9489",
     "@better-auth/oauth-provider": "latest",
     "@tailwindcss/vite": "^4.2.2",
-    "better-auth": "latest",
+    "better-auth": "https://pkg.pr.new/better-auth@9489",
     "drizzle-orm": "1.0.0-rc.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
