@@ -213,9 +213,12 @@ export const app = new Spiceflow()
         where: { userId: session.userId },
         with: { org: true },
       })
-      const firstOrg = members.find((m) => m.org != null)
-      if (firstOrg) {
-        return Response.redirect(new URL(`/dash/orgs/${encodeURIComponent(firstOrg.org!.id)}`, base).toString(), 302)
+      const lastOrg = members
+        .filter((m) => m.org != null)
+        .sort((a, b) => b.org!.createdAt! - a.org!.createdAt!)
+        [0]
+      if (lastOrg) {
+        return Response.redirect(new URL(`/dash/orgs/${encodeURIComponent(lastOrg.org!.id)}`, base).toString(), 302)
       }
     } catch {}
     return Response.redirect(new URL('/dash/new-org', base).toString(), 302)
