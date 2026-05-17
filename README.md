@@ -315,6 +315,29 @@ Put **non-secret env vars before** `sigillo run`, especially in package scripts.
 
 **Output redaction** is enabled by default. Secret values with high entropy (>=3.5 Shannon bits, >=16 chars) are replaced with `*` in stdout/stderr. This prevents secrets from leaking into agent context windows or CI logs.
 
+### Local package binaries
+
+When you run `sigillo run` through a package manager script (`pnpm run`, `bun run`, `npm run`), the package manager adds `node_modules/.bin` to `PATH` before Sigillo starts. Sigillo inherits that `PATH` and passes it to the child process, so local binaries like `vite`, `tsc`, `wrangler` are all available without prefixing with `pnpm exec` or `npx`.
+
+```bash
+# in package.json scripts, local bins just work:
+sigillo run -- vite build          # vite found via node_modules/.bin
+sigillo run -- wrangler deploy     # wrangler found via node_modules/.bin
+sigillo run -- tsc --noEmit        # tsc found via node_modules/.bin
+
+# same with --command:
+sigillo run --command 'vite build && wrangler deploy'
+```
+
+This also works when running `sigillo run` directly with `pnpm exec` or `bunx`:
+
+```bash
+pnpm exec sigillo run -- vite dev
+bunx sigillo run -- next build
+```
+
+If you installed Sigillo globally (via `curl` or `npm i -g`), running `sigillo run` outside a package manager script means `node_modules/.bin` is **not** in `PATH`. In that case, use the full path or prefix with `npx`/`pnpm exec` inside the child command, or run Sigillo from a package script instead.
+
 ### `sigillo secrets`
 
 Manage individual secrets.
