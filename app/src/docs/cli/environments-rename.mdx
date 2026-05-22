@@ -1,0 +1,36 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "environments rename"
+description: "sigillo environments rename command reference"
+icon: lucide:pencil
+---
+
+Rename an env by id or slug
+
+## Usage
+
+```sh
+sigillo environments rename <id>
+```
+
+## Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `<id>` | Yes | id |
+
+## Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--name [name]` | - | Updated env name |
+| `--slug [slug]` | - | Updated env slug |
+
+## Global Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-v, --version` | - | Display version number |
+| `-h, --help` | - | Display this message |
+| `--token [token]` | - | Auth token override |
+| `--api-url [url]` | - | API URL override (default: https://sigillo.dev) |
