@@ -104,7 +104,7 @@ export function HeroSection() {
       {/* Foreground content */}
       <div className='relative z-[2] flex flex-col items-center justify-center px-6 pt-10 sm:pt-14 pb-4'>
         <div className='flex flex-col items-center text-center'>
-          <h1 className='flex flex-col items-center leading-none'>
+          <h1 className='flex flex-col items-center leading-tight'>
             <span
               className='italic text-[28px] sm:text-[36px] md:text-[44px] font-medium text-foreground/80'
               style={{
