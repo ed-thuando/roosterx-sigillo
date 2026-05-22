@@ -27,6 +27,7 @@ import {
 import { cn } from "sigillo-app/src/lib/utils";
 import { Button } from "sigillo-app/src/components/ui/button";
 import { Input } from "sigillo-app/src/components/ui/input";
+import { NativeSelect } from "sigillo-app/src/components/ui/native-select";
 import {
   Dialog,
   DialogPopup,
@@ -383,6 +384,71 @@ export function FooterColo() {
       database in {colo}
     </span>
   );
+}
+
+// ── Theme selector ──────────────────────────────────────────────
+// Shares the color-theme cookie with Holocron docs so app pages and docs stay in sync.
+
+type ThemeChoice = 'system' | 'light' | 'dark'
+
+function parseThemeChoice(value: string | undefined): ThemeChoice {
+  return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
+}
+
+function getStoredTheme(): ThemeChoice {
+  if (typeof document === 'undefined') return 'system'
+  const match = document.cookie.match(/(?:^|;\s*)color-theme=(light|dark)(?:;|$)/)
+  return parseThemeChoice(match?.[1])
+}
+
+function applyTheme(theme: ThemeChoice) {
+  const resolved = theme === 'system'
+    ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    : theme
+
+  document.documentElement.classList.toggle('dark', resolved === 'dark')
+  if (theme === 'system') {
+    document.cookie = 'color-theme=; Path=/; Max-Age=0; SameSite=Lax'
+  } else {
+    document.cookie = `color-theme=${theme}; Path=/; Max-Age=31536000; SameSite=Lax`
+  }
+}
+
+export function ThemeSelect() {
+  const [theme, setTheme] = useState<ThemeChoice>('system')
+
+  useEffect(() => {
+    const storedTheme = getStoredTheme()
+    setTheme(storedTheme)
+    applyTheme(storedTheme)
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const onSystemChange = () => {
+      if (getStoredTheme() === 'system') applyTheme('system')
+    }
+    media.addEventListener('change', onSystemChange)
+    return () => media.removeEventListener('change', onSystemChange)
+  }, [])
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span>Theme</span>
+      <NativeSelect
+        aria-label="Theme"
+        className="min-h-7 min-w-28 text-xs sm:min-h-7 sm:text-xs"
+        value={theme}
+        onChange={(event) => {
+          const nextTheme = parseThemeChoice(event.currentTarget.value)
+          setTheme(nextTheme)
+          applyTheme(nextTheme)
+        }}
+      >
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </NativeSelect>
+    </div>
+  )
 }
 
 // ── Standalone create-project button + dialog ──────────────────

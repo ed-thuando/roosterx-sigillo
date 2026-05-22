@@ -67,19 +67,19 @@ export const app = new Spiceflow()
   // ── Layout: Dashboard routes (HTML shell + sidebar chrome) ──────
   // No global layout('/*') because holocron provides its own HTML shell
   // for docs pages (/). Each route group registers AppShell separately.
-  .layout('/dash/*', async ({ children }) => {
+  .layout('/dash/*', async ({ children, request }) => {
     const { MobileMenuButton } = await import('sigillo-app/src/components/sidebar')
     return (
-      <AppShell mobileMenuSlot={<MobileMenuButton />}>
+      <AppShell request={request} mobileMenuSlot={<MobileMenuButton />}>
         {children}
       </AppShell>
     )
   })
 
   // ── Layout: Standalone pages (login, device, invite, new-org) ──
-  .layout('/login', async ({ children }) => <AppShell>{children}</AppShell>)
-  .layout('/device', async ({ children }) => <AppShell>{children}</AppShell>)
-  .layout('/invite/*', async ({ children }) => <AppShell>{children}</AppShell>)
+  .layout('/login', async ({ children, request }) => <AppShell request={request}>{children}</AppShell>)
+  .layout('/device', async ({ children, request }) => <AppShell request={request}>{children}</AppShell>)
+  .layout('/invite/*', async ({ children, request }) => <AppShell request={request}>{children}</AppShell>)
 
   .loader('/dash/*', async ({ request }) => {
     const db = getDb()
@@ -621,9 +621,16 @@ export const app = new Spiceflow()
 /** Shared HTML shell for all non-holocron pages (dash, login, device, invite).
  *  Holocron provides its own shell for docs routes (/).
  *  This replaces the old global layout('/*'). */
-function AppShell({ children, mobileMenuSlot }: { children: React.ReactNode; mobileMenuSlot?: React.ReactNode }) {
+const appThemeScript = `(function(){var d=document.documentElement;var m=document.cookie.match(/(?:^|;\\s*)color-theme=(light|dark)(?:;|$)/);var t=m?m[1]:null;if(!t)t=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';if(t==='dark')d.classList.add('dark');else d.classList.remove('dark')})()`
+
+function getInitialThemeClass(request: Request) {
+  const cookie = request.headers.get('cookie') ?? ''
+  return /(?:^|;\s*)color-theme=dark(?:;|$)/.test(cookie) ? 'dark' : undefined
+}
+
+function AppShell({ children, mobileMenuSlot, request }: { children: React.ReactNode; mobileMenuSlot?: React.ReactNode; request: Request }) {
   return (
-    <html lang="en">
+    <html lang="en" className={getInitialThemeClass(request)} data-default-theme="system" suppressHydrationWarning>
       <Head>
         <Head.Meta charSet="UTF-8" />
         <Head.Meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -631,6 +638,7 @@ function AppShell({ children, mobileMenuSlot }: { children: React.ReactNode; mob
         <Head.Link rel="icon" type="image/png" href="/favicon.png" />
       </Head>
       <body className="relative flex flex-col min-h-screen bg-background font-sans antialiased">
+        <script dangerouslySetInnerHTML={{ __html: appThemeScript }} />
         <ProgressBar color="var(--primary)" />
         <Navbar mobileMenuSlot={mobileMenuSlot} />
         <div className="border-t border-border" />
@@ -790,14 +798,15 @@ function XIcon({ className }: { className?: string }) {
 }
 
 async function Footer() {
-  const { FooterColo } = await import('sigillo-app/src/components/sidebar')
+  const { FooterColo, ThemeSelect } = await import('sigillo-app/src/components/sidebar')
   return (
     <footer className="flex flex-col ">
       <div className="border-t border-border" />
       <div className="relative max-w-(--content-max-width) grow mx-auto w-full border-x border-border">
         <GridDot position="tl" />
         <GridDot position="tr" />
-        <div className="flex items-center justify-end gap-4 px-6 py-5">
+        <div className="flex flex-wrap items-center justify-end gap-4 px-6 py-5">
+          <ThemeSelect />
           <FooterColo />
           <span className="text-xs text-muted-foreground">
             © {new Date().getFullYear()} Sigillo
