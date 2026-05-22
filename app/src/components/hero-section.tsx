@@ -124,12 +124,6 @@ export function HeroSection() {
               humans &amp; agents.
             </span>
           </h1>
-          <p className='text-foreground/50 text-sm sm:text-base tracking-wide mt-3 sm:mt-4 max-w-2xl'>
-            Replace <code className='text-xs bg-secondary px-1.5 py-0.5 rounded'>.env</code> files
-            with a cloud-based secrets manager you can self-host.
-            <br className='hidden sm:block' />
-            Open-source alternative to Doppler and Infisical.
-          </p>
 
           {/* Login with Google CTA */}
           <a
