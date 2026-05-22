@@ -104,9 +104,6 @@ importers:
       '@vitejs/plugin-react':
         specifier: latest
         version: 6.0.1(vite@8.0.11(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
-      goke:
-        specifier: ^6.12.1
-        version: 6.12.1
       tsx:
         specifier: ^4.21.0
         version: 4.21.0

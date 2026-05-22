@@ -4,7 +4,7 @@
   "description": "Self-hostable secrets manager for humans & agents",
   "favicon": "/favicon.png",
   "colors": {
-    "primary": "#2563eb"
+    "primary": "#16a34a"
   },
   "appearance": {
     "default": "system"

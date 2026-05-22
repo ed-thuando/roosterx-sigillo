@@ -1,7 +1,7 @@
 ---
 $schema: https://holocron.so/frontmatter.json
 title: "run"
-description: "sigillo run command reference"
+description: "Run a command with secrets injected"
 icon: lucide:play
 ---
 
@@ -13,47 +13,23 @@ Run a command with secrets injected
 sigillo run <...cmd>
 ```
 
-## Arguments
-
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `<...cmd>` | Yes | cmd (variadic) |
-
 ## Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--command [cmd]` | - | Run a shell command string |
-| `--mount [path]` | - | Write secrets to a file before running |
-| `--mount-format [fmt]` | - | Format for mounted file: env, env-no-quotes, json, yaml, docker, dotnet-json (default: env) |
-| `--disable-redaction` | - | Print child output without secret redaction |
-| `-p, --project [id]` | - | Project ID override |
-| `--env [slug]` | - | Env slug override (e.g. dev, prod) |
-| `-c, --config [slug]` | - | Env slug override |
+| Option | Description |
+|--------|-------------|
+| `--command [cmd]` | Run a shell command string |
+| `--mount [path]` | Write secrets to a file before running |
+| `--mount-format [fmt]` | Format for mounted file: env, env-no-quotes, json, yaml, docker, dotnet-json (default: env) |
+| `--disable-redaction` | Print child output without secret redaction |
+| `-p, --project [id]` | Project ID override |
+| `--env [slug]` | Env slug override (e.g. dev, prod) |
+| `-c, --config [slug]` | Env slug override |
 
 ## Global Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `-v, --version` | - | Display version number |
-| `-h, --help` | - | Display this message |
-| `--token [token]` | - | Auth token override |
-| `--api-url [url]` | - | API URL override (default: https://sigillo.dev) |
-
-## Examples
-
-```sh
-sigillo run -- env
-```
-
-```sh
-sigillo run --mount .env -- npm start
-```
-
-```sh
-sigillo run --mount config.json --mount-format json -- next dev
-```
-
-```sh
-sigillo run --command 'echo $MY_SECRET'
-```
+| Option | Description |
+|--------|-------------|
+| `-h, --help` | Display this message |
+| `-v, --version` | Display version number |
+| `--token [token]` | Auth token override |
+| `--api-url [url]` | API URL override (default: https://sigillo.dev) |
