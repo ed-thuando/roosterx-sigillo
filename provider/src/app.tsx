@@ -10,6 +10,7 @@ import { Spiceflow } from 'spiceflow'
 import { Head } from 'spiceflow/react'
 import { getAuth } from './db.ts'
 import { ConsentButtons } from './components/consent-buttons.tsx'
+import { SigilloLogo } from 'sigillo-app/src/components/logo'
 
 
 function ConsentScreen({ redirectDomain }: { redirectDomain: string | null }) {
@@ -17,7 +18,7 @@ function ConsentScreen({ redirectDomain }: { redirectDomain: string | null }) {
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-10 sm:px-6">
       <section className="w-full max-w-sm">
         <div className="flex flex-col gap-1.5">
-          <p className="text-sm font-medium text-foreground">Sigillo Auth</p>
+          <SigilloLogo className="h-[36px] w-auto" />
           <h1 className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
             Sign in to continue
           </h1>
