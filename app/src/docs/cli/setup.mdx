@@ -1,0 +1,37 @@
+---
+$schema: https://holocron.so/frontmatter.json
+title: "setup"
+description: "Save default project and env for the current directory (stored in ~/.sigillo, not in the repo)"
+icon: lucide:settings
+---
+
+Save default project and env for the current directory (stored in ~/.sigillo, not in the repo)
+
+## Usage
+
+```sh
+sigillo setup
+```
+
+## Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-p, --project [id]` | - | Project ID |
+| `--env [slug]` | - | Env slug, usually dev since you run locally with the development environment |
+| `-c, --config [slug]` | - | Env slug alias |
+
+## Global Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-v, --version` | - | Display version number |
+| `-h, --help` | - | Display this message |
+| `--token [token]` | - | Auth token override |
+| `--api-url [url]` | - | API URL override (default: https://sigillo.dev) |
+
+## Examples
+
+```sh
+sigillo setup --project website --env dev
+```
