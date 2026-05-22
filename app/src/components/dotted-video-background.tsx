@@ -348,7 +348,7 @@ const DEFAULT_CONFIG: Required<DottedVideoConfig> = {
   dotSize: 8,
   minDotSize: 1,
   dotMargin: 0,
-  dotColor: '', // empty = resolve from CSS --primary at runtime
+  dotColor: '#12823b', // light-mode primary: color-mix(in srgb, green-600 80%, black)
   dotAlphaMultiplier: 1,
   gridLayout: 'straight',
   enableMask: false,
@@ -794,30 +794,7 @@ export function DottedVideoBackground({
     const container = containerRef.current
     if (!container) return
 
-    // Resolve dotColor from CSS --primary when not explicitly set.
-    // Tailwind/Vite resolves color-mix() at build time, so getPropertyValue
-    // returns a hex string directly. If for some reason it's not hex (e.g. rgb()),
-    // fall back to setting color on the container and parsing the computed value.
-    let dotColor = config?.dotColor
-    if (!dotColor) {
-      const raw = getComputedStyle(container).getPropertyValue('--primary').trim()
-      if (/^#[0-9a-f]{6}$/i.test(raw)) {
-        dotColor = raw
-      } else {
-        container.style.color = 'var(--primary)'
-        const rgb = getComputedStyle(container).color
-        container.style.color = ''
-        const m = rgb.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/)
-        if (m) {
-          dotColor = `#${Number(m[1]).toString(16).padStart(2, '0')}${Number(m[2]).toString(16).padStart(2, '0')}${Number(m[3]).toString(16).padStart(2, '0')}`
-        }
-      }
-    }
-
-    const engine = createDottedVideoEngine(container, {
-      ...config,
-      ...(dotColor ? { dotColor } : {}),
-    })
+    const engine = createDottedVideoEngine(container, config)
 
     return () => {
       engine.cleanup()
