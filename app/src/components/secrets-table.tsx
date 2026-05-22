@@ -271,6 +271,7 @@ export function SecretsTable({
   return (
     <>
       <Frame className="w-full gap-3">
+        <div className="overflow-x-auto">
         <Table>
           <colgroup>
             <col />
@@ -411,55 +412,49 @@ export function SecretsTable({
             })}
           </TableBody>
         </Table>
+        </div>
 
-        {/*<div className="border-t border-border"></div>*/}
         {/* Bottom bar: add secret + import */}
-        <div className="flex items-center justify-between gap-2 px-1 pb-2">
-          <div className="flex items-center gap-2">
-            <>
-              <Button onClick={addNewSecret} size="xs">
-                <PlusIcon className="size-3" />
-                Add Secret
-              </Button>
-              {missingKeys.length > 0 && (
-                <Button
-                  onClick={() => setSyncOpen(true)}
-                  size="xs"
-                  variant="ghost"
-                >
-                  <ArrowDownToLineIcon className="size-3" />
-                  Sync {missingKeys.length} missing
-                </Button>
-              )}
-            </>
-          </div>
-
-          <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-2 px-1 pb-2">
+          <Button onClick={addNewSecret} size="xs">
+            <PlusIcon className="size-3" />
+            Add Secret
+          </Button>
+          {missingKeys.length > 0 && (
             <Button
-              onClick={() => setImportOpen(true)}
+              onClick={() => setSyncOpen(true)}
               size="xs"
               variant="ghost"
             >
-              <UploadIcon className="size-3" />
-              Import .env
+              <ArrowDownToLineIcon className="size-3" />
+              Sync {missingKeys.length} missing
             </Button>
-            <Button
-              onClick={handleDownloadEnv}
-              size="xs"
-              variant="ghost"
-            >
-              <DownloadIcon className="size-3" />
-              Download .env
-            </Button>
-            <Button
-              onClick={() => void handleCopyEnv()}
-              size="xs"
-              variant="ghost"
-            >
-              <CopyIcon className="size-3" />
-              Copy as .env
-            </Button>
-          </div>
+          )}
+          <div className="flex-1" />
+          <Button
+            onClick={() => setImportOpen(true)}
+            size="xs"
+            variant="ghost"
+          >
+            <UploadIcon className="size-3" />
+            Import .env
+          </Button>
+          <Button
+            onClick={handleDownloadEnv}
+            size="xs"
+            variant="ghost"
+          >
+            <DownloadIcon className="size-3" />
+            Download .env
+          </Button>
+          <Button
+            onClick={() => void handleCopyEnv()}
+            size="xs"
+            variant="ghost"
+          >
+            <CopyIcon className="size-3" />
+            Copy as .env
+          </Button>
         </div>
       </Frame>
 
