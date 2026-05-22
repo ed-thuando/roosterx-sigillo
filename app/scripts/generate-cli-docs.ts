@@ -1,5 +1,5 @@
 // Generate CLI reference docs by running `sigillo --help` and parsing the output.
-// Produces one .mdx page per command + an index page in app/docs/cli/.
+// Produces one .mdx page per command + an index page in app/src/docs/cli/.
 //
 // Run: pnpm generate:cli-docs
 
@@ -9,7 +9,7 @@ import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const outDir = resolve(__dirname, '..', 'docs', 'cli')
+const outDir = resolve(__dirname, '..', 'src', 'docs', 'cli')
 const binary = resolve(__dirname, '..', '..', 'cli', 'zig-out', 'bin', 'sigillo')
 
 // ── Run sigillo --help and strip ANSI codes ──
