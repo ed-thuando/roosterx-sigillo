@@ -2,6 +2,7 @@
    A second @import creates duplicate style layers that break layout and cascade.
    @reference gives access to Tailwind variables, @apply, and @variant without duplication. */
 @reference 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
 
 
 
