@@ -15,33 +15,15 @@ sigillo login
 
 ## Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--scope [scope]` | - | Scope for saved auth (default: /) |
+| Option | Description |
+|--------|-------------|
+| `--scope [scope]` | Scope for saved auth (default: /) |
 
 ## Global Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `-v, --version` | - | Display version number |
-| `-h, --help` | - | Display this message |
-| `--token [token]` | - | Auth token override |
-| `--api-url [url]` | - | API URL override (default: https://sigillo.dev) |
-
-## Examples
-
-```sh
-sigillo login
-```
-
-```sh
-SIGILLO_TOKEN=sig_xxx sigillo login --scope /
-```
-
-```sh
-sigillo login --token sig_xxx --scope /
-```
-
-```sh
-sigillo login --api-url https://sigillo.dev --scope /Users/me/project
-```
+| Option | Description |
+|--------|-------------|
+| `-h, --help` | Display this message |
+| `-v, --version` | Display version number |
+| `--token [token]` | Auth token override |
+| `--api-url [url]` | API URL override (default: https://sigillo.dev) |
