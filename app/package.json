@@ -19,9 +19,9 @@
     "db:migrate:preview": "echo \"D1 pre-migration timestamp: $(date +%s)\" && wrangler d1 migrations apply DB --remote --env preview",
     "deployment": "pnpm db:migrate:preview && CLOUDFLARE_ENV=preview pnpm build && wrangler deploy --env preview",
     "deployment:prod": "pnpm db:migrate:prod && pnpm build && wrangler deploy",
-    "openapi": "tsx src/generate-openapi.ts",
-    "generate:install": "tsx src/generate-install-script.ts",
-    "generate:cli-docs": "tsx src/generate-cli-docs.ts"
+    "openapi": "tsx scripts/generate-openapi.ts",
+    "generate:install": "tsx scripts/generate-install-script.ts",
+    "generate:cli-docs": "tsx scripts/generate-cli-docs.ts"
   },
   "dependencies": {
     "@ascii-kit/font": "^0.0.6",
