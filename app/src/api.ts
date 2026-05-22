@@ -298,6 +298,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'POST',
     path: '/api/v0/orgs',
+    detail: { tags: ['Organizations'], summary: 'Create organization' },
     request: z.object({ name: z.string().min(1) }),
     response: orgMutationResponseSchema,
     async handler({ request }) {
@@ -316,6 +317,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'GET',
     path: '/api/v0/orgs',
+    detail: { tags: ['Organizations'], summary: 'List organizations' },
     response: orgListResponseSchema,
     async handler({ request }) {
       const session = await requireApiSession(request)
@@ -336,6 +338,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'POST',
     path: '/api/v0/projects',
+    detail: { tags: ['Projects'], summary: 'Create project' },
     request: projectCreateRequestSchema,
     response: projectMutationResponseSchema,
     async handler({ request }) {
@@ -358,6 +361,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'GET',
     path: '/api/v0/projects',
+    detail: { tags: ['Projects'], summary: 'List projects' },
     query: z.object({ orgId: z.string().min(1).optional() }),
     response: projectListResponseSchema,
     async handler({ request, query }) {
@@ -409,6 +413,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'GET',
     path: '/api/v0/projects/:id',
+    detail: { tags: ['Projects'], summary: 'Get project' },
     response: { 200: projectListItemSchema, 404: errorResponseSchema },
     async handler({ params, request }) {
       const session = await requireApiSession(request)
@@ -443,6 +448,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'PATCH',
     path: '/api/v0/projects/:id',
+    detail: { tags: ['Projects'], summary: 'Update project' },
     request: projectCreateRequestSchema.pick({ name: true }),
     response: { 200: projectMutationResponseSchema, 404: errorResponseSchema },
     async handler({ params, request }) {
@@ -464,6 +470,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'DELETE',
     path: '/api/v0/projects/:id',
+    detail: { tags: ['Projects'], summary: 'Delete project' },
     response: { 200: projectDeleteResponseSchema, 404: errorResponseSchema },
     async handler({ params, request }) {
       const session = await requireApiSession(request)
@@ -481,6 +488,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'GET',
     path: '/api/v0/projects/:projectId/environments',
+    detail: { tags: ['Environments'], summary: 'List environments' },
     response: { 200: environmentListResponseSchema, 404: errorResponseSchema },
     async handler({ params, request }) {
       const session = await requireApiSession(request)
@@ -503,6 +511,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'POST',
     path: '/api/v0/projects/:projectId/environments',
+    detail: { tags: ['Environments'], summary: 'Create environment' },
     request: environmentCreateRequestSchema,
     response: { 200: environmentMutationResponseSchema, 404: errorResponseSchema },
     async handler({ request, params }) {
@@ -521,6 +530,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'GET',
     path: '/api/v0/projects/:projectId/environments/:id',
+    detail: { tags: ['Environments'], summary: 'Get environment' },
     response: { 200: environmentSummarySchema, 404: errorResponseSchema },
     async handler({ params, request }) {
       const session = await requireApiSession(request)
@@ -543,6 +553,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'DELETE',
     path: '/api/v0/projects/:projectId/environments/:id',
+    detail: { tags: ['Environments'], summary: 'Delete environment' },
     response: { 200: environmentDeleteResponseSchema, 404: errorResponseSchema },
     async handler({ params, request }) {
       const session = await requireApiSession(request)
@@ -561,6 +572,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'PATCH',
     path: '/api/v0/projects/:projectId/environments/:id',
+    detail: { tags: ['Environments'], summary: 'Update environment' },
     request: environmentCreateRequestSchema.partial(),
     response: { 200: environmentMutationResponseSchema, 400: errorResponseSchema, 404: errorResponseSchema },
     async handler({ params, request }) {
@@ -591,6 +603,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'GET',
     path: '/api/v0/projects/:projectId/environments/:environmentId/secrets',
+    detail: { tags: ['Secrets'], summary: 'List secrets' },
     response: secretListResponseSchema,
     async handler({ params, request }): Promise<any> {
       const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
@@ -606,6 +619,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'POST',
     path: '/api/v0/projects/:projectId/environments/:environmentId/secrets',
+    detail: { tags: ['Secrets'], summary: 'Set secret' },
     request: z.object({ name: z.string().min(1), value: z.string() }),
     response: secretMutationResponseSchema,
     async handler({ request, params }) {
@@ -625,6 +639,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'GET',
     path: '/api/v0/projects/:projectId/environments/:environmentId/secrets/:name',
+    detail: { tags: ['Secrets'], summary: 'Get secret value' },
     response: { 200: secretValueResponseSchema, 404: errorResponseSchema },
     async handler({ params, request }) {
       const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
@@ -639,6 +654,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'DELETE',
     path: '/api/v0/projects/:projectId/environments/:environmentId/secrets/:name',
+    detail: { tags: ['Secrets'], summary: 'Delete secret' },
     response: secretDeleteResponseSchema,
     async handler({ params, request }) {
       const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
@@ -658,6 +674,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'GET',
     path: '/api/v0/projects/:projectId/environments/:environmentId/secrets/download',
+    detail: { tags: ['Secrets'], summary: 'Download secrets' },
     query: z.object({ format: downloadedSecretsFormatSchema.optional() }),
     async handler({ params, request, query }) {
       const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
@@ -683,6 +700,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'PUT',
     path: '/api/v0/projects/:projectId/environments/:environmentId/secrets',
+    detail: { tags: ['Secrets'], summary: 'Bulk set secrets' },
     request: z.object({ secrets: z.record(z.string(), z.string()) }),
     response: bulkSecretsResponseSchema,
     async handler({ request, params }) {
@@ -709,6 +727,7 @@ export const apiApp = new Spiceflow()
   .route({
     method: 'GET',
     path: '/api/v0/me',
+    detail: { tags: ['Auth'], summary: 'Get current user' },
     response: meResponseSchema,
     async handler({ request }) {
       const session = await requireApiSession(request)
@@ -734,12 +753,22 @@ export const apiApp = new Spiceflow()
   // ── Info (public) ───────────────────────────────────────────────
   // Returns the IATA colo code of the worker's data center.
   // Used by the UI footer to display "serving from <region>".
-  .get('/api/info', async ({ request }) => {
-    const colo = getDataCenter(request)
-    return { colo }
+  .route({
+    method: 'GET',
+    path: '/api/info',
+    detail: { hide: true },
+    async handler({ request }) {
+      const colo = getDataCenter(request)
+      return { colo }
+    },
   })
 
   // ── Health ──────────────────────────────────────────────────────
-  .get('/health', () => {
-    return { ok: true, service: 'sigillo-app' }
+  .route({
+    method: 'GET',
+    path: '/health',
+    detail: { hide: true },
+    handler() {
+      return { ok: true, service: 'sigillo-app' }
+    },
   })

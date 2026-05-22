@@ -9,8 +9,8 @@ import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const outDir = resolve(__dirname, 'docs/cli')
-const binary = resolve(__dirname, '../../cli/zig-out/bin/sigillo')
+const outDir = resolve(__dirname, '..', 'src', 'docs', 'cli')
+const binary = resolve(__dirname, '..', '..', 'cli', 'zig-out', 'bin', 'sigillo')
 
 // ── Run sigillo --help and strip ANSI codes ──
 
