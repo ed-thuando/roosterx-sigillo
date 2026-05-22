@@ -53,7 +53,7 @@ function CliBanner() {
   if (!open) return null;
 
   return (
-    <FramePanel className="relative overflow-hidden border-border/70 bg-muted/45 p-8">
+    <FramePanel className="relative overflow-hidden border-border/70 bg-muted/45 p-4 sm:p-8">
       <button
         type="button"
         onClick={() => {
@@ -114,7 +114,7 @@ export function ProjectPage() {
   return (
     <div className="flex flex-col gap-4 w-full">
       {/* Header: project name + env select */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{projectName}</h1>
         <div className="flex items-center gap-2">
           {secrets.length > 0 && (
