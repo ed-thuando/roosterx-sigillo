@@ -132,7 +132,7 @@ const indexBody = [
   '',
   '| Command | Description |',
   '|---------|-------------|',
-  ...commands.map((c) => `| [\`${c.name}\`](./${slug(c.name)}) | ${c.description} |`),
+  ...commands.map((c) => `| [\`${c.name}\`](/cli/${slug(c.name)}) | ${c.description} |`),
   '',
   '## Global Options',
   '',
