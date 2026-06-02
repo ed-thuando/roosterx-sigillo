@@ -260,15 +260,15 @@ sigillo secrets set BETTER_AUTH_SECRET "$(openssl rand -base64 32)" -c prod
 After setup, tell the user to open the Sigillo web UI to fill in empty secrets. The URL pattern is:
 
 ```
-https://sigillo.dev/orgs/<ORG_ID>/projects/<PROJECT_ID>/envs/<ENV_SLUG>
+https://sigillo.dev/dash/projects/<PROJECT_ID>/envs/<ENV_SLUG>
 ```
 
 Always print the actual URLs with real IDs so the user can click them:
 
 ```
-https://sigillo.dev/orgs/01ABC.../projects/01DEF.../envs/dev
-https://sigillo.dev/orgs/01ABC.../projects/01DEF.../envs/preview
-https://sigillo.dev/orgs/01ABC.../projects/01DEF.../envs/prod
+https://sigillo.dev/dash/projects/01DEF.../envs/dev
+https://sigillo.dev/dash/projects/01DEF.../envs/preview
+https://sigillo.dev/dash/projects/01DEF.../envs/prod
 ```
 
 ### 7. Verify
