@@ -200,9 +200,31 @@ Doppler UX rather than inventing a new interface.
 ## CLI development process
 
 - Prefer editing the Zig CLI directly in `cli/`.
-- Use `pnpm --dir cli build` to validate CLI changes. It runs the TypeScript wrapper build and refreshes the local `sigillo` command to the current checkout.
-- Use `zig build` and `zig build test` when you specifically need to validate the native Zig side directly.
+- Use `zig build` and `zig build test` (from `cli/zig`) to validate the native Zig side while iterating. `pnpm --dir cli build` only runs `tsc` for the TypeScript wrapper.
 - Keep command implementations simple and short-lived.
+
+### ALWAYS rebuild the global `sigillo` after CLI changes
+
+The global `sigillo` on your PATH (`~/.local/bin/sigillo`) is a wrapper that
+execs the prebuilt host binary at `cli/dist/<host>/sigillo`. It does **not**
+auto-update when you edit the Zig source. After **every** commit or change to
+the CLI, rebuild and reinstall it so the global command reflects the latest
+changes:
+
+```bash
+pnpm --dir cli install:local
+```
+
+This runs `scripts/build.ts`, which builds the host binary into
+`cli/dist/<host>/sigillo`, re-signs it on macOS, and refreshes the
+`~/.local/bin/sigillo` (and pnpm global) wrappers. Verify with
+`sigillo --version`.
+
+macOS note: copying a Mach-O binary invalidates Zig's embedded adhoc code
+signature, so an un-resigned copy is SIGKILLed by the kernel (`zsh: killed
+sigillo ...`, exit 137). `scripts/build.ts` re-runs `codesign --force --sign -`
+on the macOS host binary to prevent this. If you ever see `zsh: killed` from
+`sigillo`, re-run `pnpm --dir cli install:local`.
 - Prefer arenas backed by a general allocator for command-scoped memory.
 - Never use `std.heap.page_allocator` in the CLI. Prefer a command-scoped or function-scoped `GeneralPurposeAllocator`, and use an `ArenaAllocator` on top when the lifetime is naturally whole-command.
 - Allocate at command start, free at command end, and avoid complex per-value
