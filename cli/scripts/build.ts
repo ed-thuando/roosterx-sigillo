@@ -142,6 +142,15 @@ async function buildTarget({ target }: { target: Target }): Promise<void> {
   if (!target.name.startsWith('win32')) {
     fs.chmodSync(destExePath, 0o755)
   }
+
+  // Copying a Mach-O on macOS invalidates Zig's embedded adhoc code
+  // signature, so the kernel SIGKILLs the copy ("zsh: killed"). Re-sign the
+  // macOS host binary in place so the freshly installed local CLI runs.
+  if (target.name.startsWith('darwin') && process.platform === 'darwin') {
+    childProcess.execFileSync('codesign', ['--force', '--sign', '-', destExePath], {
+      stdio: 'inherit',
+    })
+  }
 }
 
 async function main(): Promise<void> {
