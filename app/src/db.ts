@@ -255,7 +255,24 @@ export function getDataCenter(request: Request & { cf?: { colo?: string } }): st
 
 type Session = { userId: string; user: { id: string; name: string; email: string } }
 
-export async function getSession(request: Request): Promise<Session | null> {
+// Spiceflow passes the SAME request instance to every matched loader/layout in
+// a single navigation (verified against the framework source). Several loaders
+// call getSession concurrently for one navigation, so without deduping each
+// would rebuild a BetterAuth instance and re-validate the session — and on a
+// cold cookie cache, each would hit D1 for the same session. Memoizing the
+// resolution per request collapses those into one. The WeakMap lets entries be
+// GC'd once the request is gone, so it never leaks across requests.
+const sessionByRequest = new WeakMap<Request, Promise<Session | null>>()
+
+export function getSession(request: Request): Promise<Session | null> {
+  const cached = sessionByRequest.get(request)
+  if (cached) return cached
+  const promise = resolveSession(request)
+  sessionByRequest.set(request, promise)
+  return promise
+}
+
+async function resolveSession(request: Request): Promise<Session | null> {
   const hasCookie = request.headers.has('cookie')
   const hasAuthorization = request.headers.has('authorization')
   if (!hasCookie && !hasAuthorization) {
@@ -381,18 +398,25 @@ export type DerivedSecret = {
   userId: string | null
 }
 
-export async function deriveSecrets(environmentId: string): Promise<DerivedSecret[]> {
-  const db = getDb()
-  const events = await db.query.secretEvent.findMany({
-    where: { environmentId },
-    orderBy: { createdAt: 'asc' },
-  })
+// Minimal shape of a secret event row needed to replay current state.
+type SecretEventRow = {
+  id: string
+  name: string
+  operation: string
+  valueEncrypted: string | null
+  iv: string | null
+  userId: string | null
+  createdAt: number
+}
 
-  // Group by name, replay to get current state
+// Replay an append-only event log (ordered by createdAt asc) into the current
+// set of secrets. Last "set" per name wins; "delete" removes it. Rows missing
+// a value/iv are dropped. Pure — no DB access, so it can run on rows fetched
+// from any query or batch.
+function replaySecretEvents(events: SecretEventRow[]): DerivedSecret[] {
   const state = new Map<string, {
     id: string
     name: string
-    operation: string
     valueEncrypted: string | null
     iv: string | null
     userId: string | null
@@ -408,10 +432,9 @@ export async function deriveSecrets(environmentId: string): Promise<DerivedSecre
       state.set(evt.name, {
         id: evt.id,
         name: evt.name,
-        operation: evt.operation,
         valueEncrypted: evt.valueEncrypted,
         iv: evt.iv,
-        userId: evt.userId!,
+        userId: evt.userId,
         createdAt: evt.createdAt,
         firstCreatedAt: existing?.firstCreatedAt ?? evt.createdAt,
       })
@@ -431,42 +454,54 @@ export async function deriveSecrets(environmentId: string): Promise<DerivedSecre
     }))
 }
 
-// ── Derive all secret names across environments ─────────────────────
-// Returns the sorted union of all active secret names across the given
-// environment IDs. No decryption needed — just replays event logs for names.
+export async function deriveSecrets(environmentId: string): Promise<DerivedSecret[]> {
+  const db = getDb()
+  const events = await db.query.secretEvent.findMany({
+    where: { environmentId },
+    orderBy: { createdAt: 'asc' },
+  })
+  return replaySecretEvents(events)
+}
 
-export async function deriveAllSecretNames(environmentIds: string[]): Promise<string[]> {
-  if (environmentIds.length === 0) return []
+// ── Derive secrets for one env + all names across envs in ONE batch ─
+// The project secrets page needs two things: the decryptable secrets for the
+// selected environment, and the union of secret names across every environment
+// (to render the "missing in this env" hints). Previously this was two separate
+// round-trips (deriveSecrets + deriveAllSecretNames). This folds every
+// secret_event read into a single db.batch so the whole page costs one D1
+// round-trip for secret data instead of N+1.
+export async function deriveEnvironmentSecretsAndNames(
+  { environmentIds, selectedEnvId }: { environmentIds: string[]; selectedEnvId: string | null },
+): Promise<{ secrets: DerivedSecret[]; allNames: string[] }> {
+  if (environmentIds.length === 0) return { secrets: [], allNames: [] }
   const db = getDb()
 
-  // Fetch all environments' events in a single D1 batch round-trip
-  const [firstEnvironmentId, ...restEnvironmentIds] = environmentIds
+  const [firstEnvId, ...restEnvIds] = environmentIds
   const results = await db.batch([
     db.query.secretEvent.findMany({
-      where: { environmentId: firstEnvironmentId },
-      columns: { name: true, operation: true, createdAt: true },
+      where: { environmentId: firstEnvId },
       orderBy: { createdAt: 'asc' },
     }),
-    ...restEnvironmentIds.map((envId) =>
+    ...restEnvIds.map((envId) =>
       db.query.secretEvent.findMany({
         where: { environmentId: envId },
-        columns: { name: true, operation: true, createdAt: true },
         orderBy: { createdAt: 'asc' },
       }),
     ),
   ])
 
   const allNames = new Set<string>()
-  for (const events of results) {
-    const active = new Set<string>()
-    for (const evt of events) {
-      if (evt.operation === 'delete') active.delete(evt.name)
-      else active.add(evt.name)
-    }
-    for (const name of active) allNames.add(name)
+  let selectedEvents: SecretEventRow[] = []
+  for (let i = 0; i < environmentIds.length; i++) {
+    const events = results[i]!
+    if (environmentIds[i] === selectedEnvId) selectedEvents = events
+    for (const secret of replaySecretEvents(events)) allNames.add(secret.name)
   }
 
-  return [...allNames].sort()
+  return {
+    secrets: selectedEnvId ? replaySecretEvents(selectedEvents) : [],
+    allNames: [...allNames].sort(),
+  }
 }
 
 // ── Secrets API auth (session OR bearer token) ─────────────────────

@@ -14,7 +14,7 @@
 import { describe, test, expect, beforeAll } from 'vitest'
 import { createSpiceflowFetch } from 'spiceflow/client'
 import { app } from './app.js'
-import { getAuth, encrypt, decrypt, deriveSecrets, generateApiToken, getDb } from './db.js'
+import { getAuth, encrypt, decrypt, deriveSecrets, deriveEnvironmentSecretsAndNames, generateApiToken, getDb } from './db.js'
 import { schema } from 'db'
 
 // ── Test helpers ────────────────────────────────────────────────────
@@ -628,6 +628,111 @@ describe('security — cross-user isolation', () => {
   test('user B cannot delete user A environment (403)', async () => {
     const res = await req(`/api/v0/projects/${userAProjectId}/environments/${userAEnvId}`, userBToken, 'DELETE')
     expect(res.status).toBe(403)
+  })
+})
+
+// ── Secrets derivation — batching & multi-author ────────────────────
+// deriveEnvironmentSecretsAndNames powers the project secrets page loader.
+// It must (1) derive the selected env's secrets, (2) return the union of
+// names across ALL envs, and (3) do it in a SINGLE db.batch round-trip
+// regardless of env count — this guards against the old N+1 author lookup
+// and the separate names/values round-trips.
+
+describe('secrets derivation — batching & multi-author', () => {
+  let af: ReturnType<typeof authedFetch>
+  let projectId: string
+  let devEnvId: string
+  let prodEnvId: string
+  let authorAId: string
+  let authorBId: string
+
+  beforeAll(async () => {
+    const owner = await createTestUser({ name: 'DeriveOwner' })
+    af = authedFetch(owner.token)
+    const org = assertOk(await af('/api/v0/orgs', { method: 'POST', body: { name: 'Derive Org' } }))
+    const proj = assertOk(await af('/api/v0/projects', { method: 'POST', body: { name: 'Derive Project', orgId: org.id } }))
+    projectId = proj.id
+    const envs = assertOk(await af('/api/v0/projects/:pid/environments', { params: { pid: projectId } }))
+    devEnvId = envs.environments.find((e) => e.slug === 'dev')!.id
+    prodEnvId = envs.environments.find((e) => e.slug === 'prod')!.id
+
+    // Two distinct authors so the resolver must handle >1 userId.
+    const authorA = await createTestUser({ name: 'Author A' })
+    const authorB = await createTestUser({ name: 'Author B' })
+    authorAId = authorA.user.id
+    authorBId = authorB.user.id
+
+    const db = getDb()
+    const a = await encrypt('alpha-value')
+    const b = await encrypt('beta-value')
+    const c = await encrypt('prod-only-value')
+    // dev: SHARED_KEY by author A, DEV_ONLY by author B
+    await db.insert(schema.secretEvent).values([
+      { environmentId: devEnvId, name: 'SHARED_KEY', operation: 'set', valueEncrypted: a.encrypted, iv: a.iv, userId: authorAId },
+      { environmentId: devEnvId, name: 'DEV_ONLY', operation: 'set', valueEncrypted: b.encrypted, iv: b.iv, userId: authorBId },
+      // prod: SHARED_KEY + PROD_ONLY so the names union spans envs
+      { environmentId: prodEnvId, name: 'SHARED_KEY', operation: 'set', valueEncrypted: a.encrypted, iv: a.iv, userId: authorAId },
+      { environmentId: prodEnvId, name: 'PROD_ONLY', operation: 'set', valueEncrypted: c.encrypted, iv: c.iv, userId: authorBId },
+    ])
+  })
+
+  test('derives selected env secrets + name union across all envs', async () => {
+    const { secrets, allNames } = await deriveEnvironmentSecretsAndNames({
+      environmentIds: [devEnvId, prodEnvId],
+      selectedEnvId: devEnvId,
+    })
+
+    expect(secrets.map((s) => s.name).sort()).toEqual(['DEV_ONLY', 'SHARED_KEY'])
+    // names union spans BOTH environments, not just the selected one
+    expect(allNames).toMatchInlineSnapshot(`
+      [
+        "DEV_ONLY",
+        "PROD_ONLY",
+        "SHARED_KEY",
+      ]
+    `)
+    // both authors are represented across the derived secrets
+    const authorIds = new Set(secrets.map((s) => s.userId))
+    expect(authorIds).toEqual(new Set([authorAId, authorBId]))
+  })
+
+  test('event sourcing: delete removes a name from both secrets and union', async () => {
+    const db = getDb()
+    // Delete DEV_ONLY in dev — it should vanish from dev secrets, and since it
+    // existed only in dev, it should vanish from the cross-env name union too.
+    await db.insert(schema.secretEvent).values({
+      environmentId: devEnvId, name: 'DEV_ONLY', operation: 'delete', userId: authorAId,
+    })
+
+    const { secrets, allNames } = await deriveEnvironmentSecretsAndNames({
+      environmentIds: [devEnvId, prodEnvId],
+      selectedEnvId: devEnvId,
+    })
+    expect(secrets.map((s) => s.name)).toEqual(['SHARED_KEY'])
+    expect(allNames).toEqual(['PROD_ONLY', 'SHARED_KEY'])
+  })
+
+  test('empty env list returns empty results without querying', async () => {
+    const result = await deriveEnvironmentSecretsAndNames({ environmentIds: [], selectedEnvId: null })
+    expect(result).toEqual({ secrets: [], allNames: [] })
+  })
+
+  test('null selected env returns no secrets but the same full name union', async () => {
+    // Order-independent: the name union must NOT depend on which env is
+    // selected, so a null selection yields the same union as selecting an env.
+    const withSelection = await deriveEnvironmentSecretsAndNames({
+      environmentIds: [devEnvId, prodEnvId],
+      selectedEnvId: devEnvId,
+    })
+    const withoutSelection = await deriveEnvironmentSecretsAndNames({
+      environmentIds: [devEnvId, prodEnvId],
+      selectedEnvId: null,
+    })
+    expect(withoutSelection.secrets).toEqual([])
+    expect(withoutSelection.allNames).toEqual(withSelection.allNames)
+    // PROD_ONLY + SHARED_KEY are seeded and never deleted, so always present.
+    expect(withoutSelection.allNames).toContain('PROD_ONLY')
+    expect(withoutSelection.allNames).toContain('SHARED_KEY')
   })
 })
 

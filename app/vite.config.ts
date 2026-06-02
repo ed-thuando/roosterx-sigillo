@@ -34,10 +34,15 @@ export default defineConfig(async () => {
             },
           })
         : null,
-      // In test mode: use raw plugins (holocron auto-adds react+tailwind+spiceflow
-      // which conflicts with cloudflareTest). In dev/build: use holocron.
+      // app.tsx imports `@holocron.so/vite/app`, so holocron must run in BOTH
+      // modes to (a) alias that bare id to its `src/app.tsx` and (b) provide the
+      // `virtual:holocron-*` modules. Without it in tests, the id resolves to
+      // `dist/app.js` which imports virtual modules that don't exist, crashing
+      // module load. In test mode we also pass the raw react+spiceflow plugins;
+      // holocron detects them and skips adding its own duplicates, avoiding the
+      // conflict with cloudflareTest (which manages workerd itself).
       ...(process.env.VITEST
-        ? [react(), spiceflowPlugin({ entry: './src/app.tsx' })]
+        ? [react(), spiceflowPlugin({ entry: './src/app.tsx' }), holocron({ entry: './src/app.tsx', pagesDir: './src' })]
         : [holocron({ entry: './src/app.tsx', pagesDir: './src' })]),
       // cloudflare() must come AFTER spiceflow/holocron — spiceflow sets ssr outDir to
       // dist/rsc/ssr (nested inside the worker root) so workerd can resolve the
