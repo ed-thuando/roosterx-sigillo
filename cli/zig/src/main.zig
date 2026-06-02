@@ -44,6 +44,26 @@ fn envOverride(env: ?[]const u8, config_alias: ?[]const u8) ?[]const u8 {
     return env orelse config_alias;
 }
 
+/// Merge repeatable --env and --config values into one ordered env list.
+/// --env values come first, then --config, preserving CLI order within each.
+fn envOverrideMany(
+    allocator: std.mem.Allocator,
+    env: []const []const u8,
+    config_alias: []const []const u8,
+) ![]const []const u8 {
+    const merged = try allocator.alloc([]const u8, env.len + config_alias.len);
+    @memcpy(merged[0..env.len], env);
+    @memcpy(merged[env.len..], config_alias);
+    return merged;
+}
+
+/// Whether `secrets set` should open an interactive masked prompt for the value.
+/// Only when no value was provided and stdin is a TTY (so piping still works in
+/// scripts and CI).
+fn needsInteractivePrompt(has_value: bool, stdin_is_tty: bool) bool {
+    return !has_value and stdin_is_tty;
+}
+
 const Global = zeke.globalOpts()
     .option("--token [token]", "Auth token override")
     .option("--api-url [url]", "API URL override (default: https://sigillo.dev)");
@@ -207,15 +227,18 @@ const SecretsGet = zeke.cmd("secrets get <name>", "Get a secret value")
     .option("-c, --config [slug]", "Env slug override")
     .option("--force", "Allow printing secret values in agent shells");
 
-const SecretsSet = zeke.cmd("secrets set <name> [value]", "Set a secret value (omit value to read from stdin)")
+const SecretsSet = zeke.cmd("secrets set <name> [value]", "Set a secret value (omit value for a masked prompt or stdin)")
     .option("-p, --project [id]", "Project ID override")
-    .option("--env [slug]", "Env slug override (e.g. dev, prod)")
-    .option("-c, --config [slug]", "Env slug override");
+    .optionMany("--env <slug>", "Env slug override, repeatable (e.g. dev, prod)")
+    .optionMany("-c, --config <slug>", "Env slug override, repeatable")
+    .example("sigillo secrets set STRIPE_SECRET_KEY -c prod")
+    .example("sigillo secrets set DATABASE_URL postgres://... -c dev -c prod");
 
 const SecretsDelete = zeke.cmd("secrets delete <name>", "Delete a secret")
     .option("-p, --project [id]", "Project ID override")
-    .option("--env [slug]", "Env slug override (e.g. dev, prod)")
-    .option("-c, --config [slug]", "Env slug override");
+    .optionMany("--env <slug>", "Env slug override, repeatable (e.g. dev, prod)")
+    .optionMany("-c, --config <slug>", "Env slug override, repeatable")
+    .example("sigillo secrets delete OLD_KEY -c dev -c prod");
 
 const SecretsDownload = zeke.cmd("secrets download", "Download all secrets in a chosen format")
     .option("--format [fmt]", "Output format: json, env, env-no-quotes, xargs, yaml, docker, dotnet-json (default: yaml)")
@@ -1183,6 +1206,46 @@ fn requireEnvironmentContext(allocator: std.mem.Allocator, stderr: Writer, cwd: 
     };
 }
 
+/// Resolve the list of environments a mutating command (set/delete) should
+/// target. When `env_slugs` is empty it falls back to the single configured
+/// env (`sigillo setup`). When one or more `-c/--env` slugs are given, each
+/// becomes its own context sharing the resolved project + api context.
+fn resolveTargetEnvironments(
+    allocator: std.mem.Allocator,
+    stderr: Writer,
+    cwd: []const u8,
+    project: ?[]const u8,
+    env_slugs: []const []const u8,
+    global: Global.Options,
+) ![]const EnvironmentContext {
+    if (env_slugs.len == 0) {
+        const ctx = try requireEnvironmentContext(allocator, stderr, cwd, .{
+            .token = global.token,
+            .api_url = global.api_url,
+            .project = project,
+        });
+        const single = try allocator.alloc(EnvironmentContext, 1);
+        single[0] = ctx;
+        return single;
+    }
+
+    const project_ctx = try requireProjectContext(allocator, stderr, cwd, .{
+        .token = global.token,
+        .api_url = global.api_url,
+        .project = project,
+    });
+
+    const contexts = try allocator.alloc(EnvironmentContext, env_slugs.len);
+    for (env_slugs, 0..) |slug, i| {
+        contexts[i] = .{
+            .api = project_ctx.api,
+            .project_id = project_ctx.project_id,
+            .environment_id = slug,
+        };
+    }
+    return contexts;
+}
+
 fn requirePlainSecretForceInAgent(allocator: std.mem.Allocator, stderr: Writer, force: bool) !void {
     if (force) return;
     const stdout_is_tty = std.posix.isatty(File.stdout().handle);
@@ -1343,24 +1406,29 @@ fn secretsSetAction(args: SecretsSet.Args, opts: SecretsSet.Options, global: Glo
     defer arena.deinit();
     const allocator = arena.allocator();
     const cwd = try config.getCwd(allocator);
-    const ctx = try requireEnvironmentContext(allocator, stderr, cwd, .{
-        .token = global.token,
-        .api_url = global.api_url,
-        .project = opts.project,
-        .environment = envOverride(opts.env, opts.config),
-    });
 
-    // Resolve secret value: use positional arg, or read from piped stdin.
-    // When reading from stdin, strip a single trailing newline that `echo` adds
-    // (but preserve multiline values — only strip if the value is single-line).
+    const env_slugs = try envOverrideMany(allocator, opts.env, opts.config);
+
+    // Resolve secret value once, before any network calls, so the value is
+    // typed/piped a single time even when fanning out to multiple envs.
+    //   - positional arg → use it verbatim
+    //   - no arg + TTY   → masked password prompt
+    //   - no arg + pipe  → read stdin (strip one trailing newline echo adds)
     const value: []const u8 = if (args.value) |v| v else blk: {
         const stdin_is_tty = std.posix.isatty(File.stdin().handle);
-        if (stdin_is_tty) {
-            try color.err(stderr, "error");
-            try stderr.print(": value is required (pass as argument or pipe via stdin)\n", .{});
-            try stderr.print("  sigillo secrets set {s} <value>\n", .{args.name});
-            try stderr.print("  echo 'myvalue' | sigillo secrets set {s}\n", .{args.name});
-            std.process.exit(1);
+        if (needsInteractivePrompt(false, stdin_is_tty)) {
+            const prompt_text = try std.fmt.allocPrint(allocator, "Value for {s}:", .{args.name});
+            const entered = try prompt.password(allocator, prompt_text) orelse {
+                try color.err(stderr, "error");
+                try stderr.print(": cancelled\n", .{});
+                std.process.exit(1);
+            };
+            if (entered.len == 0) {
+                try color.err(stderr, "error");
+                try stderr.print(": value cannot be empty\n", .{});
+                std.process.exit(1);
+            }
+            break :blk entered;
         }
         const raw = try File.stdin().readToEndAlloc(allocator, 10 * 1024 * 1024);
         // Strip a single trailing newline only for single-line values — this is the
@@ -1373,31 +1441,39 @@ fn secretsSetAction(args: SecretsSet.Args, opts: SecretsSet.Options, global: Glo
         break :blk raw;
     };
 
-    const res = try client.setSecret(.{
-        .allocator = allocator,
-        .api_url = ctx.api.api_url,
-        .token = ctx.api.token,
-        .environment_id = ctx.environment_id,
-        .project_id = ctx.project_id,
-        .name = args.name,
-        .value = value,
-    });
-    if (res.status != 200 or res.value == null) {
-        const message = client.parseError(allocator, res.body) orelse try allocator.dupe(u8, "unknown error");
-        try color.err(stderr, "error");
-        try stderr.print(": failed to set secret ({d}): {s}\n", .{ res.status, message });
-        std.process.exit(1);
+    const contexts = try resolveTargetEnvironments(allocator, stderr, cwd, opts.project, env_slugs, global);
+
+    var had_failure = false;
+    for (contexts) |ctx| {
+        const res = try client.setSecret(.{
+            .allocator = allocator,
+            .api_url = ctx.api.api_url,
+            .token = ctx.api.token,
+            .environment_id = ctx.environment_id,
+            .project_id = ctx.project_id,
+            .name = args.name,
+            .value = value,
+        });
+        if (res.status != 200 or res.value == null) {
+            const message = client.parseError(allocator, res.body) orelse try allocator.dupe(u8, "unknown error");
+            try color.err(stderr, "error");
+            try stderr.print(": failed to set secret in {s} ({d}): {s}\n", .{ ctx.environment_id, res.status, message });
+            had_failure = true;
+            continue;
+        }
+
+        const secret = res.value.?;
+        try stdout.print(
+            "ok: true\nenvironment_id: {s}\nid: {s}\nname: {s}\n",
+            .{
+                try quoteString(allocator, secret.environmentId),
+                try quoteString(allocator, secret.id),
+                try quoteString(allocator, secret.name),
+            },
+        );
     }
 
-    const secret = res.value.?;
-    try stdout.print(
-        "ok: true\nenvironment_id: {s}\nid: {s}\nname: {s}\n",
-        .{
-            try quoteString(allocator, secret.environmentId),
-            try quoteString(allocator, secret.id),
-            try quoteString(allocator, secret.name),
-        },
-    );
+    if (had_failure) std.process.exit(1);
 }
 
 fn secretsDeleteAction(args: SecretsDelete.Args, opts: SecretsDelete.Options, global: Global.Options) !void {
@@ -1409,29 +1485,35 @@ fn secretsDeleteAction(args: SecretsDelete.Args, opts: SecretsDelete.Options, gl
     defer arena.deinit();
     const allocator = arena.allocator();
     const cwd = try config.getCwd(allocator);
-    const ctx = try requireEnvironmentContext(allocator, stderr, cwd, .{
-        .token = global.token,
-        .api_url = global.api_url,
-        .project = opts.project,
-        .environment = envOverride(opts.env, opts.config),
-    });
 
-    const res = try client.deleteSecret(.{
-        .allocator = allocator,
-        .api_url = ctx.api.api_url,
-        .token = ctx.api.token,
-        .environment_id = ctx.environment_id,
-        .project_id = ctx.project_id,
-        .name = args.name,
-    });
-    if (res.status != 200 or res.value == null) {
-        const message = client.parseError(allocator, res.body) orelse try allocator.dupe(u8, "unknown error");
-        try color.err(stderr, "error");
-        try stderr.print(": failed to delete secret ({d}): {s}\n", .{ res.status, message });
-        std.process.exit(1);
+    const env_slugs = try envOverrideMany(allocator, opts.env, opts.config);
+    const contexts = try resolveTargetEnvironments(allocator, stderr, cwd, opts.project, env_slugs, global);
+
+    var had_failure = false;
+    for (contexts) |ctx| {
+        const res = try client.deleteSecret(.{
+            .allocator = allocator,
+            .api_url = ctx.api.api_url,
+            .token = ctx.api.token,
+            .environment_id = ctx.environment_id,
+            .project_id = ctx.project_id,
+            .name = args.name,
+        });
+        if (res.status != 200 or res.value == null) {
+            const message = client.parseError(allocator, res.body) orelse try allocator.dupe(u8, "unknown error");
+            try color.err(stderr, "error");
+            try stderr.print(": failed to delete secret in {s} ({d}): {s}\n", .{ ctx.environment_id, res.status, message });
+            had_failure = true;
+            continue;
+        }
+
+        try stdout.print("ok: true\nenvironment_id: {s}\nname: {s}\n", .{
+            try quoteString(allocator, ctx.environment_id),
+            try quoteString(allocator, res.value.?.name),
+        });
     }
 
-    try stdout.print("ok: true\nname: {s}\n", .{try quoteString(allocator, res.value.?.name)});
+    if (had_failure) std.process.exit(1);
 }
 
 fn secretsDownloadAction(_: SecretsDownload.Args, opts: SecretsDownload.Options, global: Global.Options) !void {
@@ -2472,6 +2554,78 @@ test "secrets set parses short project alias" {
     try app.dispatch(&.{ "secrets", "set", "DATABASE_URL", "postgres://example", "-p", "proj_123", "-c", "dev" });
 
     try std.testing.expectEqualStrings("proj_123", State.project.?);
+}
+
+// zeke frees the optionMany slices via deinitOptions after dispatch returns,
+// so these tests assert *inside* the action while the slices are still valid.
+test "secrets set collects repeated config values" {
+    const State = struct {
+        fn action(_: SecretsSet.Args, opts: SecretsSet.Options, _: Global.Options) !void {
+            try std.testing.expectEqual(@as(usize, 2), opts.config.len);
+            try std.testing.expectEqualStrings("dev", opts.config[0]);
+            try std.testing.expectEqualStrings("prod", opts.config[1]);
+        }
+    };
+
+    const TestSecretsSet = SecretsSet.bindWith(Global, State.action);
+    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "sigillo");
+    try app.dispatch(&.{ "secrets", "set", "K", "v", "-c", "dev", "-c", "prod" });
+}
+
+test "secrets set merges env and config lists in order" {
+    const State = struct {
+        fn action(_: SecretsSet.Args, opts: SecretsSet.Options, _: Global.Options) !void {
+            const merged = try envOverrideMany(std.testing.allocator, opts.env, opts.config);
+            defer std.testing.allocator.free(merged);
+            try std.testing.expectEqual(@as(usize, 2), merged.len);
+            try std.testing.expectEqualStrings("dev", merged[0]);
+            try std.testing.expectEqualStrings("prod", merged[1]);
+        }
+    };
+
+    const TestSecretsSet = SecretsSet.bindWith(Global, State.action);
+    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "sigillo");
+    try app.dispatch(&.{ "secrets", "set", "K", "v", "--env", "dev", "-c", "prod" });
+}
+
+test "secrets set leaves env list empty when omitted" {
+    const State = struct {
+        fn action(_: SecretsSet.Args, opts: SecretsSet.Options, _: Global.Options) !void {
+            try std.testing.expectEqual(@as(usize, 0), opts.env.len);
+            try std.testing.expectEqual(@as(usize, 0), opts.config.len);
+        }
+    };
+
+    const TestSecretsSet = SecretsSet.bindWith(Global, State.action);
+    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "sigillo");
+    try app.dispatch(&.{ "secrets", "set", "K", "v" });
+}
+
+test "secrets delete collects repeated config values" {
+    const State = struct {
+        fn action(_: SecretsDelete.Args, opts: SecretsDelete.Options, _: Global.Options) !void {
+            try std.testing.expectEqual(@as(usize, 2), opts.config.len);
+            try std.testing.expectEqualStrings("dev", opts.config[0]);
+            try std.testing.expectEqualStrings("prod", opts.config[1]);
+        }
+    };
+
+    const TestSecretsDelete = SecretsDelete.bindWith(Global, State.action);
+    var app = zeke.AppWith(.{TestSecretsDelete}, Global).init(std.testing.allocator, "sigillo");
+    try app.dispatch(&.{ "secrets", "delete", "OLD_KEY", "-c", "dev", "-c", "prod" });
+}
+
+test "needsInteractivePrompt only triggers without value on a tty" {
+    try std.testing.expect(needsInteractivePrompt(false, true));
+    try std.testing.expect(!needsInteractivePrompt(true, true));
+    try std.testing.expect(!needsInteractivePrompt(false, false));
+    try std.testing.expect(!needsInteractivePrompt(true, false));
+}
+
+test "envOverrideMany returns empty slice when both lists empty" {
+    const merged = try envOverrideMany(std.testing.allocator, &.{}, &.{});
+    defer std.testing.allocator.free(merged);
+    try std.testing.expectEqual(@as(usize, 0), merged.len);
 }
 
 test "orgs create parses required options" {
