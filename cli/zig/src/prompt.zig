@@ -181,13 +181,14 @@ fn clearOptions(out: color.Writer, count: usize) !void {
 /// user aborted with ctrl-c / ctrl-d. The returned slice never contains the
 /// trailing newline.
 ///
-/// Requires a TTY on both stdin and stdout — callers must check `isatty`
-/// before calling. On Windows (no termios) it falls back to a plain,
+/// Requires a TTY on stdin — callers must check `isatty` before calling. All
+/// prompt UI is written to stderr so stdout stays clean for machine-readable
+/// command output. On Windows (no termios) it falls back to a plain,
 /// non-masked line read so the prompt still works.
 pub fn password(allocator: std.mem.Allocator, prompt_text: []const u8) !?[]const u8 {
     const stdin = std.fs.File.stdin();
-    const stdout = std.fs.File.stdout();
-    const out = stdout.deprecatedWriter();
+    const stderr = std.fs.File.stderr();
+    const out = stderr.deprecatedWriter();
 
     // Windows has no termios; read a plain line without masking.
     if (comptime builtin.os.tag == .windows) {
@@ -257,8 +258,8 @@ pub fn password(allocator: std.mem.Allocator, prompt_text: []const u8) !?[]const
 /// Non-masked password fallback for platforms without termios (Windows).
 fn passwordFallback(allocator: std.mem.Allocator, prompt_text: []const u8) !?[]const u8 {
     const stdin = std.fs.File.stdin();
-    const stdout = std.fs.File.stdout();
-    const out = stdout.deprecatedWriter();
+    const stderr = std.fs.File.stderr();
+    const out = stderr.deprecatedWriter();
 
     try out.writeAll(prompt_text);
     try out.writeAll(" ");

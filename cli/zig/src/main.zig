@@ -44,17 +44,34 @@ fn envOverride(env: ?[]const u8, config_alias: ?[]const u8) ?[]const u8 {
     return env orelse config_alias;
 }
 
-/// Merge repeatable --env and --config values into one ordered env list.
-/// --env values come first, then --config, preserving CLI order within each.
+/// Merge the repeatable `--env` and `--config` aliases into one env list.
+///
+/// zeke exposes the two aliases as separate slices, so true interleaved CLI
+/// order across the two flags cannot be recovered. The contract is therefore
+/// fixed and explicit: all `--env` values first (in CLI order), then all
+/// `--config` values (in CLI order). Duplicate slugs are dropped so the same
+/// env is never targeted twice when both aliases name it.
 fn envOverrideMany(
     allocator: std.mem.Allocator,
     env: []const []const u8,
     config_alias: []const []const u8,
 ) ![]const []const u8 {
-    const merged = try allocator.alloc([]const u8, env.len + config_alias.len);
-    @memcpy(merged[0..env.len], env);
-    @memcpy(merged[env.len..], config_alias);
-    return merged;
+    var merged = try std.ArrayListUnmanaged([]const u8).initCapacity(allocator, env.len + config_alias.len);
+    for ([_][]const []const u8{ env, config_alias }) |list| {
+        for (list) |slug| {
+            var seen = false;
+            for (merged.items) |existing| {
+                if (std.mem.eql(u8, existing, slug)) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) merged.appendAssumeCapacity(slug);
+        }
+    }
+    // Shrink the allocation to the deduped length so callers that free the
+    // returned slice (tests) match the actual allocation size.
+    return merged.toOwnedSlice(allocator);
 }
 
 /// Whether `secrets set` should open an interactive masked prompt for the value.
@@ -163,14 +180,17 @@ fn exitProjectNotFound(
     std.process.exit(1);
 }
 
-fn exitEnvNotFound(
+// Print the "env not found" error plus the available-envs hint, without
+// exiting. Used by both the exiting single-env path and the multi-env
+// continue-on-error loops in secrets set/delete.
+fn printEnvNotFound(
     allocator: std.mem.Allocator,
     stderr: Writer,
     api_url: []const u8,
     token: []const u8,
     env: []const u8,
     project: ?[]const u8,
-) noreturn {
+) void {
     color.err(stderr, "error") catch {};
     if (project) |project_id| {
         stderr.print(": env {s} was not found in project {s}\n", .{ env, project_id }) catch {};
@@ -181,6 +201,17 @@ fn exitEnvNotFound(
     } else {
         stderr.print(": env {s} was not found or you do not have access to it\n", .{env}) catch {};
     }
+}
+
+fn exitEnvNotFound(
+    allocator: std.mem.Allocator,
+    stderr: Writer,
+    api_url: []const u8,
+    token: []const u8,
+    env: []const u8,
+    project: ?[]const u8,
+) noreturn {
+    printEnvNotFound(allocator, stderr, api_url, token, env, project);
     std.process.exit(1);
 }
 
@@ -1409,8 +1440,12 @@ fn secretsSetAction(args: SecretsSet.Args, opts: SecretsSet.Options, global: Glo
 
     const env_slugs = try envOverrideMany(allocator, opts.env, opts.config);
 
-    // Resolve secret value once, before any network calls, so the value is
-    // typed/piped a single time even when fanning out to multiple envs.
+    // Resolve auth + project + target envs first, so the user is never asked to
+    // type a secret only to then hit "not logged in" or "project not configured".
+    const contexts = try resolveTargetEnvironments(allocator, stderr, cwd, opts.project, env_slugs, global);
+
+    // Resolve secret value once, after context is known but before any write,
+    // so the value is typed/piped a single time even when fanning out to many envs.
     //   - positional arg → use it verbatim
     //   - no arg + TTY   → masked password prompt
     //   - no arg + pipe  → read stdin (strip one trailing newline echo adds)
@@ -1441,8 +1476,6 @@ fn secretsSetAction(args: SecretsSet.Args, opts: SecretsSet.Options, global: Glo
         break :blk raw;
     };
 
-    const contexts = try resolveTargetEnvironments(allocator, stderr, cwd, opts.project, env_slugs, global);
-
     var had_failure = false;
     for (contexts) |ctx| {
         const res = try client.setSecret(.{
@@ -1455,6 +1488,11 @@ fn secretsSetAction(args: SecretsSet.Args, opts: SecretsSet.Options, global: Glo
             .value = value,
         });
         if (res.status != 200 or res.value == null) {
+            if (res.status == 404) {
+                printEnvNotFound(allocator, stderr, ctx.api.api_url, ctx.api.token, ctx.environment_id, ctx.project_id);
+                had_failure = true;
+                continue;
+            }
             const message = client.parseError(allocator, res.body) orelse try allocator.dupe(u8, "unknown error");
             try color.err(stderr, "error");
             try stderr.print(": failed to set secret in {s} ({d}): {s}\n", .{ ctx.environment_id, res.status, message });
@@ -1500,6 +1538,11 @@ fn secretsDeleteAction(args: SecretsDelete.Args, opts: SecretsDelete.Options, gl
             .name = args.name,
         });
         if (res.status != 200 or res.value == null) {
+            if (res.status == 404) {
+                printEnvNotFound(allocator, stderr, ctx.api.api_url, ctx.api.token, ctx.environment_id, ctx.project_id);
+                had_failure = true;
+                continue;
+            }
             const message = client.parseError(allocator, res.body) orelse try allocator.dupe(u8, "unknown error");
             try color.err(stderr, "error");
             try stderr.print(": failed to delete secret in {s} ({d}): {s}\n", .{ ctx.environment_id, res.status, message });
@@ -2626,6 +2669,41 @@ test "envOverrideMany returns empty slice when both lists empty" {
     const merged = try envOverrideMany(std.testing.allocator, &.{}, &.{});
     defer std.testing.allocator.free(merged);
     try std.testing.expectEqual(@as(usize, 0), merged.len);
+}
+
+test "envOverrideMany puts --env values before --config values" {
+    const merged = try envOverrideMany(std.testing.allocator, &.{"prod"}, &.{"dev"});
+    defer std.testing.allocator.free(merged);
+    try std.testing.expectEqual(@as(usize, 2), merged.len);
+    try std.testing.expectEqualStrings("prod", merged[0]);
+    try std.testing.expectEqualStrings("dev", merged[1]);
+}
+
+test "envOverrideMany dedupes slugs across both aliases" {
+    const merged = try envOverrideMany(std.testing.allocator, &.{ "dev", "prod" }, &.{ "dev", "staging" });
+    defer std.testing.allocator.free(merged);
+    try std.testing.expectEqual(@as(usize, 3), merged.len);
+    try std.testing.expectEqualStrings("dev", merged[0]);
+    try std.testing.expectEqualStrings("prod", merged[1]);
+    try std.testing.expectEqualStrings("staging", merged[2]);
+}
+
+test "secrets set with interleaved env and config flags keeps env-first order" {
+    const State = struct {
+        fn action(_: SecretsSet.Args, opts: SecretsSet.Options, _: Global.Options) !void {
+            const merged = try envOverrideMany(std.testing.allocator, opts.env, opts.config);
+            defer std.testing.allocator.free(merged);
+            try std.testing.expectEqual(@as(usize, 2), merged.len);
+            // --env prod was passed after -c dev on the CLI, but env values
+            // always sort before config values.
+            try std.testing.expectEqualStrings("prod", merged[0]);
+            try std.testing.expectEqualStrings("dev", merged[1]);
+        }
+    };
+
+    const TestSecretsSet = SecretsSet.bindWith(Global, State.action);
+    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "sigillo");
+    try app.dispatch(&.{ "secrets", "set", "K", "v", "-c", "dev", "--env", "prod" });
 }
 
 test "orgs create parses required options" {
