@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.10.0
+
+1. **Set or delete a secret across many environments at once** — `-c`/`--config` (and `--env`) are now repeatable on `secrets set` and `secrets delete`, so a single command fans out to every environment you list:
+
+   ```bash
+   # write the same value to dev, prod, and staging in one shot
+   sigillo secrets set DATABASE_URL postgres://... -c dev -c prod -c staging
+
+   # delete a stale key from multiple environments
+   sigillo secrets delete OLD_KEY -c dev -c prod
+   ```
+
+   Fan-out is continue-on-error: if one environment fails (for example an unknown env slug), it prints `failed to set/delete secret in <env> ...` and keeps going through the rest, then exits non-zero if any failed. The env-not-found hint still lists the available environments. With no `-c`/`--env` flag the behavior is unchanged: it uses the single environment from `sigillo setup`.
+
+2. **Masked prompt when you omit the secret value on a terminal** — leave the value off and Sigillo asks for it interactively, masking each character so the secret never appears on screen:
+
+   ```bash
+   sigillo secrets set STRIPE_SECRET_KEY -c prod
+   ? Value for STRIPE_SECRET_KEY: *****************
+   ```
+
+   The value is read once before any network call, so a multi-environment write only prompts a single time. Backspace works and ctrl-c/ctrl-d cancels. Piped stdin (non-TTY) is unchanged: it still reads the value from stdin and strips a single trailing newline for scripts and CI.
+
 ## 0.9.1
 
 1. **Configured subfolders shown in error messages** — when you run `sigillo run` from a directory without a project configured, the error now lists subfolders that _are_ set up with their project names and environments. This helps agents and users discover they need to `cd` into the right directory:
