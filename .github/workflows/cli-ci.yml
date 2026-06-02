@@ -42,9 +42,13 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm
 
+      # Install only the cli workspace's dependencies. The cli package has no
+      # workspace deps and only public-npm devDependencies, so this avoids
+      # resolving the app/provider better-auth pkg.pr.new preview packages
+      # (which lack lockfile integrity fields and break a full workspace
+      # install under CI's frozen-lockfile default).
       - name: Install dependencies
-        working-directory: cli
-        run: pnpm install
+        run: pnpm install --filter sigillo --frozen-lockfile
 
       - name: Build all targets
         working-directory: cli
@@ -80,8 +84,7 @@ jobs:
         run: npm install -g pnpm
 
       - name: Install dependencies
-        working-directory: cli
-        run: pnpm install
+        run: pnpm install --filter sigillo --frozen-lockfile
 
       - name: Build TypeScript
         working-directory: cli
