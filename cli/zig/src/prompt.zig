@@ -176,6 +176,107 @@ fn clearOptions(out: color.Writer, count: usize) !void {
     try moveToOptionsStart(out, count);
 }
 
+/// Prompt for a secret value with masked input (shows `*` per typed char).
+/// Returns the entered string (allocated with `allocator`), or null if the
+/// user aborted with ctrl-c / ctrl-d. The returned slice never contains the
+/// trailing newline.
+///
+/// Requires a TTY on both stdin and stdout — callers must check `isatty`
+/// before calling. On Windows (no termios) it falls back to a plain,
+/// non-masked line read so the prompt still works.
+pub fn password(allocator: std.mem.Allocator, prompt_text: []const u8) !?[]const u8 {
+    const stdin = std.fs.File.stdin();
+    const stdout = std.fs.File.stdout();
+    const out = stdout.deprecatedWriter();
+
+    // Windows has no termios; read a plain line without masking.
+    if (comptime builtin.os.tag == .windows) {
+        return passwordFallback(allocator, prompt_text);
+    }
+
+    const original_termios = try posix.tcgetattr(stdin.handle);
+    var raw = original_termios;
+    raw.lflag.ECHO = false;
+    raw.lflag.ICANON = false;
+    raw.lflag.ISIG = false;
+    raw.lflag.IEXTEN = false;
+    raw.iflag.IXON = false;
+    raw.iflag.ICRNL = false;
+    raw.cc[@intFromEnum(posix.V.MIN)] = 1;
+    raw.cc[@intFromEnum(posix.V.TIME)] = 0;
+
+    try posix.tcsetattr(stdin.handle, .FLUSH, raw);
+    defer posix.tcsetattr(stdin.handle, .FLUSH, original_termios) catch {};
+
+    try color.blue(out, "? ");
+    try color.bold(out, prompt_text);
+    try out.writeAll(" ");
+
+    var buffer = std.ArrayListUnmanaged(u8).empty;
+    errdefer buffer.deinit(allocator);
+
+    while (true) {
+        var byte: [1]u8 = undefined;
+        const n = stdin.read(&byte) catch break;
+        if (n == 0) break; // EOF behaves like enter
+        switch (byte[0]) {
+            3, 4 => {
+                // ctrl-c / ctrl-d → abort
+                try out.writeAll("\n");
+                buffer.deinit(allocator);
+                return null;
+            },
+            '\r', '\n' => break,
+            127, 8 => {
+                // backspace / delete → erase one masked char
+                if (buffer.items.len > 0) {
+                    buffer.items.len -= 1;
+                    try out.writeAll("\x08 \x08");
+                }
+            },
+            else => |c| {
+                if (c >= 0x20) {
+                    try buffer.append(allocator, c);
+                    try out.writeAll("*");
+                }
+            },
+        }
+    }
+
+    // Replace the prompt line with a confirmation that hides the value.
+    try out.writeAll("\r\x1b[2K");
+    try color.green(out, "✔ ");
+    try color.bold(out, prompt_text);
+    try out.writeAll(" ");
+    for (buffer.items) |_| try out.writeAll("*");
+    try out.writeAll("\n");
+
+    return try buffer.toOwnedSlice(allocator);
+}
+
+/// Non-masked password fallback for platforms without termios (Windows).
+fn passwordFallback(allocator: std.mem.Allocator, prompt_text: []const u8) !?[]const u8 {
+    const stdin = std.fs.File.stdin();
+    const stdout = std.fs.File.stdout();
+    const out = stdout.deprecatedWriter();
+
+    try out.writeAll(prompt_text);
+    try out.writeAll(" ");
+
+    var buffer = std.ArrayListUnmanaged(u8).empty;
+    errdefer buffer.deinit(allocator);
+
+    var byte: [1]u8 = undefined;
+    while (true) {
+        const n = stdin.read(&byte) catch break;
+        if (n == 0) break;
+        if (byte[0] == '\n' or byte[0] == '\r') break;
+        try buffer.append(allocator, byte[0]);
+    }
+
+    return try buffer.toOwnedSlice(allocator);
+}
+
 /// Non-interactive fallback: print numbered list, read a number.
 fn selectFallback(prompt_text: []const u8, options: []const []const u8, default: ?usize) !?usize {
     const stdout = std.fs.File.stdout();
