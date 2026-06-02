@@ -16,9 +16,7 @@ import {
   requirePageSession,
   requirePageOrgMember,
   getOrgIdForProject,
-  requireSecretsApiAuth,
-  deriveSecrets,
-  deriveAllSecretNames,
+  deriveEnvironmentSecretsAndNames,
   decrypt,
 } from './db.ts'
 import { apiApp } from './api.ts'
@@ -228,13 +226,15 @@ export const app = new Spiceflow()
     const db = getDb()
     const base = new URL(request.url)
     try {
-      const projects = await db.query.project.findMany({
+      // Only need the org's first project + its envs to build the redirect, so
+      // fetch a single row instead of the whole project list.
+      const firstProject = await db.query.project.findFirst({
         where: { orgId: params.orgId },
-        with: { environments: true },
+        columns: { id: true },
+        with: { environments: { columns: { slug: true, createdAt: true } } },
         orderBy: { createdAt: 'desc' },
       })
-      if (projects[0]) {
-        const firstProject = projects[0]
+      if (firstProject) {
         const sortedEnvs = [...(firstProject.environments || [])].sort((a, b) => a.createdAt - b.createdAt)
         const href = sortedEnvs[0]
           ? `/dash/projects/${encodeURIComponent(firstProject.id)}/envs/${encodeURIComponent(sortedEnvs[0].slug)}`
@@ -317,17 +317,22 @@ export const app = new Spiceflow()
     }
 
     let secrets: { id: string; name: string; value: string; createdAt: number; updatedAt: number; createdBy: { id: string; name: string } | null }[] = []
-    const allSecretNames = await deriveAllSecretNames(environments.map((e) => e.id))
+    // One D1 batch derives the selected env's secrets AND the union of names
+    // across all envs, instead of a separate names round-trip + per-env query.
+    const { secrets: derived, allNames: allSecretNames } = await deriveEnvironmentSecretsAndNames({
+      environmentIds: environments.map((e) => e.id),
+      selectedEnvId,
+    })
     if (selectedEnvId) {
-      const derived = await deriveSecrets(selectedEnvId)
+      // Resolve all secret authors in ONE query instead of findFirst per user.
       const userIds = [...new Set(derived.map((d) => d.userId).filter(isTruthy))]
       const userMap = new Map<string, { id: string; name: string }>()
-      for (const uid of userIds) {
-        const u = await db.query.user.findFirst({
-          where: { id: uid },
+      if (userIds.length > 0) {
+        const users = await db.query.user.findMany({
+          where: { id: { in: userIds } },
           columns: { id: true, name: true },
         })
-        if (u) userMap.set(uid, u)
+        for (const u of users) userMap.set(u.id, u)
       }
       secrets = await Promise.all(derived.map(async (d) => ({
         id: d.id, name: d.name,
