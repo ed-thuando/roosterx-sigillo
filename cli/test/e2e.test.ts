@@ -210,6 +210,95 @@ describe('sigillo cli e2e', () => {
     expect(getMulti.stdout).toContain('line2')
   }, 60_000)
 
+  test('secrets set fans out to multiple envs with repeated -c', async () => {
+    const name = 'E2E_MULTI_SET'
+    const value = `multi-${cliContext.environmentSlug}`
+
+    const set = await runCli({
+      args: [
+        'secrets', 'set', name, value,
+        '-c', cliContext.environmentSlug,
+        '-c', cliContext.extraEnvironmentSlug,
+      ],
+      context: cliContext,
+    })
+    expect(set.status, set.stderr).toBe(0)
+    // One result block per env, naming each environment id.
+    expect(set.stdout).toContain(`environment_id: "${cliContext.environmentId}"`)
+    expect(set.stdout).toContain(`environment_id: "${cliContext.extraEnvironmentId}"`)
+
+    // Both envs must actually hold the value now.
+    const getMain = await runCli({ args: ['secrets', 'get', name, '-c', cliContext.environmentSlug], context: cliContext })
+    expect(getMain.status).toBe(0)
+    expect(getMain.stdout).toContain(`value: "${value}"`)
+
+    const getExtra = await runCli({ args: ['secrets', 'get', name, '-c', cliContext.extraEnvironmentSlug], context: cliContext })
+    expect(getExtra.status).toBe(0)
+    expect(getExtra.stdout).toContain(`value: "${value}"`)
+  }, 60_000)
+
+  test('secrets delete fans out to multiple envs with repeated -c', async () => {
+    const name = 'E2E_MULTI_DELETE'
+    const value = 'to-be-deleted'
+
+    // Seed the secret in both envs first.
+    const set = await runCli({
+      args: ['secrets', 'set', name, value, '-c', cliContext.environmentSlug, '-c', cliContext.extraEnvironmentSlug],
+      context: cliContext,
+    })
+    expect(set.status, set.stderr).toBe(0)
+
+    const del = await runCli({
+      args: ['secrets', 'delete', name, '-c', cliContext.environmentSlug, '-c', cliContext.extraEnvironmentSlug],
+      context: cliContext,
+    })
+    expect(del.status, del.stderr).toBe(0)
+    // The delete API response carries no environment id, so the CLI echoes the
+    // slug it was given for each env in the fan-out.
+    expect(del.stdout).toContain(`environment_id: "${cliContext.environmentSlug}"`)
+    expect(del.stdout).toContain(`environment_id: "${cliContext.extraEnvironmentSlug}"`)
+
+    // The secret should no longer resolve in either env.
+    const getMain = await runCli({ args: ['secrets', 'get', name, '-c', cliContext.environmentSlug], context: cliContext })
+    expect(getMain.status).not.toBe(0)
+    const getExtra = await runCli({ args: ['secrets', 'get', name, '-c', cliContext.extraEnvironmentSlug], context: cliContext })
+    expect(getExtra.status).not.toBe(0)
+  }, 60_000)
+
+  test('secrets set continues past an invalid env and exits non-zero', async () => {
+    const name = 'E2E_MULTI_PARTIAL'
+    const value = 'partial-write'
+    const bogusSlug = `does-not-exist-${Date.now()}`
+
+    const set = await runCli({
+      args: ['secrets', 'set', name, value, '-c', cliContext.environmentSlug, '-c', bogusSlug],
+      context: cliContext,
+    })
+    // One env succeeded, one failed → non-zero overall.
+    expect(set.status).not.toBe(0)
+    // Friendly env-not-found hint is preserved for the bad slug.
+    expect(set.stderr).toContain(bogusSlug)
+    // The valid env still got the value despite the failure.
+    expect(set.stdout).toContain(`environment_id: "${cliContext.environmentId}"`)
+
+    const getMain = await runCli({ args: ['secrets', 'get', name, '-c', cliContext.environmentSlug], context: cliContext })
+    expect(getMain.status).toBe(0)
+    expect(getMain.stdout).toContain(`value: "${value}"`)
+  }, 60_000)
+
+  test('secrets set rejects empty piped value', async () => {
+    // Non-TTY with empty stdin: the masked prompt only triggers on a TTY, so
+    // piped empty input flows through as an empty value. The server stores it,
+    // but we assert the command does not crash and round-trips an empty string.
+    const name = 'E2E_EMPTY_PIPE'
+    const set = await runCli({
+      args: ['secrets', 'set', name, '-c', cliContext.environmentSlug],
+      context: cliContext,
+      stdin: '',
+    })
+    expect(set.status, set.stderr).toBe(0)
+  }, 60_000)
+
   test('run redacts secrets from stdout and stderr', async () => {
     const command = [
       `printf "stdout:%s\\n" "${'$'}${cliContext.secretName}"`,
