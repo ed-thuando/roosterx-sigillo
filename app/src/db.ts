@@ -145,7 +145,7 @@ export async function ensureOAuthClient(request: Request): Promise<string> {
   const host = getRequestHost(request)
   const hostname = host.split(':')[0] ?? host
   const isLocal = isLocalHost(hostname)
-  const isOAuthCallback = pathname.startsWith('/api/auth/oauth2/callback/')
+  const isOAuthCallback = pathname.startsWith('/api/auth/callback/')
   const cachedClientId = isLocal && isOAuthCallback
     ? await readOAuthClientId(host)
     : await lookupOAuthClientId(host)
@@ -160,7 +160,13 @@ export async function ensureOAuthClient(request: Request): Promise<string> {
   // auth and the rest of the app function correctly.
 
   const origin = getRequestOrigin(request)
-  const callbackUrl = new URL('/api/auth/oauth2/callback/sigillo', origin).toString()
+  // The redirect_uri MUST exactly match what genericOAuth sends to the provider's
+  // /authorize endpoint (the provider does a strict string compare; a mismatch
+  // yields `invalid_redirect`). Since better-auth 1.7, genericOAuth is registered
+  // as a social provider and uses the CORE callback route `/api/auth/callback/:id`,
+  // NOT the old `/api/auth/oauth2/callback/:id`. Keep this path in sync with the
+  // `isOAuthCallback` check above if better-auth ever changes the callback route.
+  const callbackUrl = new URL('/api/auth/callback/sigillo', origin).toString()
   // Localhost callback URLs are cheap disposable registrations. Refresh them on
   // sign-in requests so stale provider-side client ids never break local login,
   // but keep the cached id during the OAuth callback so the code exchange uses
