@@ -53,12 +53,14 @@ function SecretValueCell({
   onValueChange,
   visible,
   onToggle,
+  isDirty,
 }: {
   value: string;
   editedValue: string | undefined;
   onValueChange: (value: string) => void;
   visible: boolean;
   onToggle: () => void;
+  isDirty?: boolean;
 }) {
   const displayValue = editedValue ?? value;
 
@@ -86,6 +88,7 @@ function SecretValueCell({
         className={cn(
           "min-w-0 max-w-full flex-1 font-mono",
           visible ? "bg-muted/50" : "text-security-disc border-transparent bg-muted/50 cursor-pointer select-none",
+          isDirty && "border-amber-400/50 focus:ring-amber-500",
         )}
       />
       <button
@@ -181,12 +184,12 @@ export function SecretsTable({
   const totalDirtyCount = pendingEdits.length;
 
   const currentEnvEntries: Array<[string, string]> = [
-    ...secrets.map<[string, string]>((secret) => [
+    ...secrets.map((secret): [string, string] => [
       edits[secret.id]?.name ?? secret.name,
       edits[secret.id]?.value ?? secret.value,
     ]),
-    ...dirtyMissingKeys.map<[string, string]>((name) => [name, missingEdits[name]!]),
-    ...dirtyNewSecrets.map<[string, string]>((secret) => [secret.name, secret.value]),
+    ...dirtyMissingKeys.map((name): [string, string] => [name, missingEdits[name]!]),
+    ...dirtyNewSecrets.map((secret): [string, string] => [secret.name, secret.value]),
   ];
   const envFileText = currentEnvEntries
     .map(([name, value]) => `${name}=${JSON.stringify(value)}`)
@@ -299,7 +302,10 @@ export function SecretsTable({
                       inputSize="sm"
                       value={edits[secret.id]?.name ?? secret.name}
                       onChange={(e) => setEdit(secret.id, "name", e.target.value)}
-                      className="w-full min-w-0 border-transparent bg-transparent px-1.5 font-mono font-medium focus:border-input hover:border-input"
+                      className={cn(
+                        "w-full min-w-0 border-transparent bg-transparent px-1.5 font-mono font-medium focus:border-input hover:border-input",
+                        isDirty && "text-amber-700 dark:text-amber-400 border-amber-400/50 focus:ring-amber-500",
+                      )}
                     />
                   </TableCell>
                   <TableCell className="min-w-0 overflow-hidden">
@@ -309,6 +315,7 @@ export function SecretsTable({
                       onValueChange={(v) => setEdit(secret.id, "value", v)}
                       visible={isVisible}
                       onToggle={() => setRowVisible((prev) => ({ ...prev, [secret.id]: !isVisible }))}
+                      isDirty={isDirty}
                     />
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
