@@ -1,5 +1,5 @@
 /**
- * Full-bleed hero with DottedVideoBackground (Three.js fluid sim), serif title,
+ * Full-bleed hero with VideoBackgroundShader (raw WebGL fluid sim), serif title,
  * login CTA, and links.
  *
  * Breaks out of the Above column constraint via w-screen + negative margin
@@ -7,13 +7,13 @@
  *
  * Dark mode: primary-colored dots on near-black background.
  * Light mode: video is CSS-inverted, dots blend with light background.
- * Gradient overlays use var(--background) so they adapt to theme automatically.
+ * Gradient overlays handled by VideoBackgroundShader's fadeTop/fadeBottom.
  */
 'use client'
 
 import { ArrowDown } from 'lucide-react'
 import { preload } from 'react-dom'
-import { DottedVideoBackground } from './dotted-video-background.tsx'
+import { VideoBackgroundShader } from '@holocron.so/vite/mdx'
 
 
 const HERO_FONT_URL =
@@ -35,26 +35,6 @@ function XIcon({ size = 12 }: { size?: number }) {
   )
 }
 
-// Gradient overlays using var(--background) for theme-adaptive blending.
-const TOP_GRADIENT = [
-  'linear-gradient(to bottom,',
-  'var(--background) 0%,',
-  'color-mix(in srgb, var(--background) 90%, transparent) 10%,',
-  'color-mix(in srgb, var(--background) 70%, transparent) 22%,',
-  'color-mix(in srgb, var(--background) 40%, transparent) 40%,',
-  'color-mix(in srgb, var(--background) 15%, transparent) 60%,',
-  'transparent 80%)',
-].join(' ')
-
-const BOTTOM_GRADIENT = [
-  'linear-gradient(to top,',
-  'var(--background) 0%,',
-  'color-mix(in srgb, var(--background) 85%, transparent) 15%,',
-  'color-mix(in srgb, var(--background) 50%, transparent) 35%,',
-  'color-mix(in srgb, var(--background) 20%, transparent) 55%,',
-  'transparent 75%)',
-].join(' ')
-
 const GITHUB_URL = 'https://github.com/remorses/sigillo'
 const X_URL = 'https://x.com/__morse'
 
@@ -64,41 +44,19 @@ export function HeroSection() {
     <>
     <link rel='stylesheet' href={HERO_FONT_URL} />
     <div className='relative mt-2 lg:mt-4 mb-4 lg:mb-6 w-screen ml-[calc(-50vw+50%)] flex flex-col items-center overflow-hidden'>
-      {/* Three.js dotted video background */}
-      <div
-        className='absolute inset-0 w-full h-full z-0 overflow-hidden dark:opacity-60 opacity-40'
-        style={{
-          maskImage:
-            'linear-gradient(to bottom, black 60%, transparent 100%)',
-          WebkitMaskImage:
-            'linear-gradient(to bottom, black 60%, transparent 100%)',
-        }}
-      >
-        <DottedVideoBackground
-          className='w-full h-full'
-          config={{
-            dotSize: 6,
-            minDotSize: 1,
-            dotMargin: 1,
-            animSpeed: 3,
-            gamma: 0.8,
-            enableMask: false,
-            fluidStrength: 0.2,
-            fluidCurl: 80,
-          }}
-        />
-      </div>
-
-      {/* Top gradient overlay */}
-      <div
-        className='absolute top-0 inset-x-0 h-[60%] z-[1] pointer-events-none'
-        style={{ background: TOP_GRADIENT }}
-      />
-
-      {/* Bottom gradient overlay */}
-      <div
-        className='absolute bottom-0 inset-x-0 h-[40%] z-[1] pointer-events-none'
-        style={{ background: BOTTOM_GRADIENT }}
+      <VideoBackgroundShader
+        src='/assets/hero-bg.mp4'
+        className='absolute inset-0 w-full h-full'
+        canvasClassName='dark:opacity-60 opacity-40'
+        dotColor='#12823b'
+        dotSize={6}
+        minDotSize={1}
+        dotMargin={1}
+        animSpeed={3}
+        gamma={0.8}
+        enableMask={false}
+        fluidStrength={0.2}
+        fluidCurl={80}
       />
 
       {/* Foreground content */}
