@@ -11,7 +11,7 @@
 import { env } from 'cloudflare:workers'
 import { drizzle } from 'drizzle-orm/sqlite-proxy'
 import * as schema from './schema.ts'
-import { betterAuth } from 'better-auth'
+import { betterAuth } from 'better-auth/minimal'
 import { jwt } from 'better-auth/plugins'
 import { oauthProvider } from '@better-auth/oauth-provider'
 import { drizzleAdapter } from 'better-auth-drizzle-adapter'
