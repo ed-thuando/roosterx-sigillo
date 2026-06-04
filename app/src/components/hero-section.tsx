@@ -12,12 +12,9 @@
 'use client'
 
 import { ArrowDown } from 'lucide-react'
-import { preload } from 'react-dom'
 import { VideoBackgroundShader } from '@holocron.so/vite/mdx'
 
-
-const HERO_FONT_URL =
-  'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,400;1,500&display=swap'
+const HERO_FONT = "'IvarText', serif"
 
 function GithubIcon({ size = 14 }: { size?: number }) {
   return (
@@ -39,16 +36,13 @@ const GITHUB_URL = 'https://github.com/remorses/sigillo'
 const X_URL = 'https://x.com/__morse'
 
 export function HeroSection() {
-  preload(HERO_FONT_URL, { as: 'style' })
   return (
-    <>
-    <link rel='stylesheet' href={HERO_FONT_URL} />
     <div className='relative mt-2 lg:mt-4 mb-4 lg:mb-6 w-screen ml-[calc(-50vw+50%)] flex flex-col items-center overflow-hidden'>
       <VideoBackgroundShader
         src='/assets/hero-bg.mp4'
         className='absolute inset-0 w-full h-full'
         canvasClassName='dark:opacity-60 opacity-40'
-        dotColor='#12823b'
+        dotColor='#6ec9a0'
         dotSize={6}
         minDotSize={1}
         dotMargin={1}
@@ -64,20 +58,14 @@ export function HeroSection() {
         <div className='flex flex-col items-center text-center'>
           <h1 className='flex flex-col items-center leading-tight'>
             <span
-              className='italic text-[28px] sm:text-[36px] md:text-[44px] font-medium text-foreground/80'
-              style={{
-                fontFamily:
-                  "'Cormorant Garamond', Garamond, 'EB Garamond', 'Crimson Text', Georgia, serif",
-              }}
+              className='text-[28px] sm:text-[36px] md:text-[44px] text-foreground'
+              style={{ fontFamily: HERO_FONT }}
             >
               secrets manager for
             </span>
             <span
-              className='italic text-[28px] sm:text-[36px] md:text-[44px] font-medium text-foreground/80 -mt-1 sm:-mt-2'
-              style={{
-                fontFamily:
-                  "'Cormorant Garamond', Garamond, 'EB Garamond', 'Crimson Text', Georgia, serif",
-              }}
+              className='text-[28px] sm:text-[36px] md:text-[44px] text-foreground -mt-1 sm:-mt-2'
+              style={{ fontFamily: HERO_FONT }}
             >
               humans &amp; agents.
             </span>
@@ -127,6 +115,5 @@ export function HeroSection() {
         </div>
       </div>
     </div>
-    </>
   )
 }
