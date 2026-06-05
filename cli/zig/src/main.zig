@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const zeke = @import("zeke");
 const config = @import("config.zig");
 const client = @import("client.zig");
+const pty = @import("pty.zig");
 
 const color = @import("color.zig");
 const prompt = @import("prompt.zig");
@@ -959,19 +960,146 @@ fn runChildProcessWithWriters(
     stdout_writer: anytype,
     stderr_writer: anytype,
 ) !u8 {
+    return runChildProcessImpl(
+        child_allocator,
+        env_map,
+        redact_values,
+        argv,
+        stdout_writer,
+        stderr_writer,
+        false,
+        false,
+    );
+}
+
+/// Core implementation. `force_stdout_pty`/`force_stderr_pty` allow tests
+/// to exercise the PTY branch even when the test runner's stdout is a pipe.
+fn runChildProcessImpl(
+    child_allocator: std.mem.Allocator,
+    env_map: *std.process.EnvMap,
+    redact_values: []const []const u8,
+    argv: []const []const u8,
+    stdout_writer: anytype,
+    stderr_writer: anytype,
+    force_stdout_pty: bool,
+    force_stderr_pty: bool,
+) !u8 {
+    const needs_redaction = redact_values.len > 0;
+    const is_posix = (builtin.os.tag != .windows);
+
+    // When redaction is needed and parent streams are TTYs, use PTYs so
+    // child processes still see isatty()=true for colored output, progress
+    // bars, interactive prompts, etc. Fall back to plain pipes when the
+    // parent stream is already piped (not a TTY), on PTY allocation failure,
+    // or on Windows (no POSIX PTYs).
+    const use_stdout_pty = is_posix and needs_redaction and (force_stdout_pty or std.posix.isatty(File.stdout().handle));
+    const use_stderr_pty = is_posix and needs_redaction and (force_stderr_pty or std.posix.isatty(File.stderr().handle));
+
+    const stdout_pty: ?pty.PtyPair = if (use_stdout_pty) pty.openPty() catch null else null;
+    errdefer if (stdout_pty) |p| {
+        p.closeMaster();
+        p.closeSlave();
+    };
+
+    const stderr_pty: ?pty.PtyPair = if (use_stderr_pty) pty.openPty() catch null else null;
+    errdefer if (stderr_pty) |p| {
+        p.closeMaster();
+        p.closeSlave();
+    };
+
+    // Disable output post-processing (OPOST/ONLCR) on PTY slaves so the
+    // terminal line discipline does not transform \n → \r\n. Without this,
+    // multiline secrets containing \n would be emitted as \r\n, breaking
+    // exact-byte redaction matching and leaking secrets.
+    if (stdout_pty) |p| pty.disableOutputProcessing(p.slave);
+    if (stderr_pty) |p| pty.disableOutputProcessing(p.slave);
+
+    // Copy terminal window size from parent to PTY masters so the child
+    // sees the correct COLUMNS/LINES values.
+    if (stdout_pty) |p| pty.copyWinsize(File.stdout().handle, p.master);
+    if (stderr_pty) |p| pty.copyWinsize(File.stderr().handle, p.master);
+
+    // To make the child inherit the PTY slave as its stdout/stderr, we
+    // temporarily dup2 the slave fds onto the parent's STDOUT/STDERR,
+    // spawn the child with .Inherit, then restore the originals.
+    // This is safe because the CLI is single-threaded at spawn time.
+    var saved_stdout: ?std.posix.fd_t = null;
+    var saved_stderr: ?std.posix.fd_t = null;
+    var stdio_restored = false;
+    if (is_posix) {
+        if (stdout_pty) |p| {
+            saved_stdout = try std.posix.dup(std.posix.STDOUT_FILENO);
+            try std.posix.dup2(p.slave, std.posix.STDOUT_FILENO);
+        }
+        if (stderr_pty) |p| {
+            saved_stderr = try std.posix.dup(std.posix.STDERR_FILENO);
+            try std.posix.dup2(p.slave, std.posix.STDERR_FILENO);
+        }
+    }
+
+    // If anything fails between dup2 and the normal restore below (e.g.
+    // createRedactionPlan or child.spawn), restore the parent's original
+    // stdout/stderr so the process isn't left with broken fds.
+    errdefer if (is_posix and !stdio_restored) {
+        if (saved_stdout) |fd| {
+            std.posix.dup2(fd, std.posix.STDOUT_FILENO) catch {};
+            std.posix.close(fd);
+        }
+        if (saved_stderr) |fd| {
+            std.posix.dup2(fd, std.posix.STDERR_FILENO) catch {};
+            std.posix.close(fd);
+        }
+    };
+
     var child = std.process.Child.init(argv, child_allocator);
     child.stdin_behavior = .Inherit;
-    child.stdout_behavior = if (redact_values.len == 0) .Inherit else .Pipe;
-    child.stderr_behavior = if (redact_values.len == 0) .Inherit else .Pipe;
     child.env_map = env_map;
+
+    if (stdout_pty != null) {
+        child.stdout_behavior = .Inherit;
+    } else if (needs_redaction) {
+        child.stdout_behavior = .Pipe;
+    } else {
+        child.stdout_behavior = .Inherit;
+    }
+
+    if (stderr_pty != null) {
+        child.stderr_behavior = .Inherit;
+    } else if (needs_redaction) {
+        child.stderr_behavior = .Pipe;
+    } else {
+        child.stderr_behavior = .Inherit;
+    }
 
     const redaction_plan = try createRedactionPlan(child_allocator, redact_values);
     defer child_allocator.free(redaction_plan.sorted_values);
 
     try child.spawn();
-    if (redact_values.len > 0) {
-        const stdout_pipe = child.stdout.?;
-        const stderr_pipe = child.stderr.?;
+
+    // Restore parent's original stdout/stderr immediately after fork.
+    if (is_posix) {
+        if (saved_stdout) |fd| {
+            std.posix.dup2(fd, std.posix.STDOUT_FILENO) catch {};
+            std.posix.close(fd);
+        }
+        if (saved_stderr) |fd| {
+            std.posix.dup2(fd, std.posix.STDERR_FILENO) catch {};
+            std.posix.close(fd);
+        }
+    }
+    stdio_restored = true;
+
+    // Close slave ends in the parent — only the child uses them.
+    if (stdout_pty) |p| p.closeSlave();
+    if (stderr_pty) |p| p.closeSlave();
+
+    if (needs_redaction) {
+        // Determine the read source for each stream: PTY master or pipe.
+        const stdout_read: File = if (stdout_pty) |p| p.masterFile() else if (child.stdout) |pipe| pipe else unreachable;
+        const stderr_read: File = if (stderr_pty) |p| p.masterFile() else if (child.stderr) |pipe| pipe else unreachable;
+        const stdout_is_pty = stdout_pty != null;
+        const stderr_is_pty = stderr_pty != null;
+
         child.stdout = null;
         child.stderr = null;
 
@@ -979,16 +1107,18 @@ fn runChildProcessWithWriters(
         var stderr_result = PipeStreamResult{};
 
         const stdout_thread = try std.Thread.spawn(.{}, streamPipeRedactedThread, .{
-            stdout_pipe,
+            stdout_read,
             redaction_plan,
             stdout_writer,
             &stdout_result,
+            stdout_is_pty,
         });
         const stderr_thread = try std.Thread.spawn(.{}, streamPipeRedactedThread, .{
-            stderr_pipe,
+            stderr_read,
             redaction_plan,
             stderr_writer,
             &stderr_result,
+            stderr_is_pty,
         });
 
         stdout_thread.join();
@@ -1028,13 +1158,18 @@ fn createRedactionPlan(
     };
 }
 
+/// Runs on a dedicated thread per stream (stdout/stderr). Each thread gets
+/// its own writer, so the writer's backing allocator must be independent —
+/// arena allocators are NOT thread-safe; sharing one between the stdout and
+/// stderr threads causes data races and GPA allocation-size mismatches.
 fn streamPipeRedactedThread(
     pipe: File,
     redaction_plan: RedactionPlan,
     writer: anytype,
     result: *PipeStreamResult,
+    is_pty: bool,
 ) void {
-    streamPipeRedacted(pipe, redaction_plan, writer) catch |err| {
+    streamPipeRedacted(pipe, redaction_plan, writer, is_pty) catch |err| {
         result.err = err;
     };
 }
@@ -1043,6 +1178,7 @@ fn streamPipeRedacted(
     pipe: File,
     redaction_plan: RedactionPlan,
     writer: anytype,
+    is_pty: bool,
 ) !void {
     defer pipe.close();
 
@@ -1055,7 +1191,14 @@ fn streamPipeRedacted(
 
     var read_buf: [8192]u8 = undefined;
     while (true) {
-        const bytes_read = try pipe.read(&read_buf);
+        const bytes_read = pipe.read(&read_buf) catch |err| switch (err) {
+            // PTY master returns EIO when the slave side is closed (child
+            // exited). This is normal EOF for PTYs, not a real I/O error.
+            // Only treat EIO as EOF for PTY streams; for plain pipes it
+            // would mask a genuine I/O error.
+            error.InputOutput => if (is_pty) break else return err,
+            else => return err,
+        };
         if (bytes_read == 0) break;
 
         try pending.appendSlice(allocator, read_buf[0..bytes_read]);
@@ -2289,9 +2432,19 @@ test "streaming redaction flushes short safe output immediately" {
 test "runChildProcessWithWriters streams large stdout without buffering it all" {
     if (builtin.os.tag == .windows) return error.SkipZigTest;
 
+    // Separate arenas for stdout/stderr writers: the redaction threads call
+    // these writers concurrently and arena allocators are not thread-safe.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
+
+    var stdout_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stdout_arena.deinit();
+    const stdout_alloc = stdout_arena.allocator();
+
+    var stderr_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stderr_arena.deinit();
+    const stderr_alloc = stderr_arena.allocator();
 
     var env_map = std.process.EnvMap.init(allocator);
     defer env_map.deinit();
@@ -2302,6 +2455,254 @@ test "runChildProcessWithWriters streams large stdout without buffering it all" 
     );
 
     var stdout_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stdout_buf.deinit(stdout_alloc);
+    var stderr_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stderr_buf.deinit(stderr_alloc);
+
+    const exit_code = try runChildProcessWithWriters(
+        allocator,
+        &env_map,
+        &.{"not-a-real-secret"},
+        argv,
+        stdout_buf.writer(stdout_alloc),
+        stderr_buf.writer(stderr_alloc),
+    );
+
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+    try std.testing.expectEqual(@as(usize, 20_000_000), stdout_buf.items.len);
+    try std.testing.expectEqual(@as(usize, 0), stderr_buf.items.len);
+    try std.testing.expect(std.mem.allEqual(u8, stdout_buf.items, 'x'));
+}
+
+test "child process sees isatty=true through PTY-backed redaction" {
+    // Spawns a child that checks isatty(1) and isatty(2). Since the test
+    // runner's stdout is NOT a TTY, runChildProcessWithWriters falls back
+    // to pipes. We test the PTY path explicitly by creating PTY pairs and
+    // using dup2 to make the child inherit them.
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Create a PTY pair to serve as the child's stdout
+    const stdout_pair = try pty.openPty();
+    defer stdout_pair.closeMaster();
+
+    // Save real stdout, replace with PTY slave
+    const saved = try std.posix.dup(std.posix.STDOUT_FILENO);
+    try std.posix.dup2(stdout_pair.slave, std.posix.STDOUT_FILENO);
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+
+    // The child runs `test -t 1` which exits 0 if fd 1 is a TTY
+    const argv = try shellCommandArgv(allocator, "test -t 1");
+
+    var child = std.process.Child.init(argv, allocator);
+    child.stdin_behavior = .Inherit;
+    child.stdout_behavior = .Inherit; // inherits the PTY slave
+    child.stderr_behavior = .Inherit;
+    child.env_map = &env_map;
+    try child.spawn();
+
+    // Restore stdout immediately after fork
+    std.posix.dup2(saved, std.posix.STDOUT_FILENO) catch {};
+    std.posix.close(saved);
+    stdout_pair.closeSlave();
+
+    const term = try child.wait();
+    const exit_code = switch (term) {
+        .Exited => |code| code,
+        else => 1,
+    };
+
+    // `test -t 1` exits 0 when stdout is a TTY
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+}
+
+test "redaction works through PTY: secrets are masked in child output" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Create PTY pair to intercept child output
+    const pair = try pty.openPty();
+    // Don't defer closeMaster — streamPipeRedactedThread takes ownership
+    // and closes it via `defer pipe.close()` in streamPipeRedacted.
+
+    const secret = "xK9mP2nQ4rS6tU8vW0yA1bC3dE5fG7hJ";
+
+    // Save real stdout, replace with PTY slave so the child inherits it
+    const saved_stdout = try std.posix.dup(std.posix.STDOUT_FILENO);
+    try std.posix.dup2(pair.slave, std.posix.STDOUT_FILENO);
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+    try env_map.put("TEST_SECRET", secret);
+
+    // Child echoes the secret via env var
+    const argv = try shellCommandArgv(allocator, "printf '%s' \"$TEST_SECRET\"");
+
+    var child = std.process.Child.init(argv, allocator);
+    child.stdin_behavior = .Inherit;
+    child.stdout_behavior = .Inherit;
+    child.stderr_behavior = .Pipe;
+    child.env_map = &env_map;
+    try child.spawn();
+
+    // Restore stdout immediately after fork
+    std.posix.dup2(saved_stdout, std.posix.STDOUT_FILENO) catch {};
+    std.posix.close(saved_stdout);
+    pair.closeSlave();
+
+    // Read child's output from PTY master, applying redaction.
+    // streamPipeRedactedThread closes the fd when done, so we must not
+    // close it again ourselves.
+    const redaction_plan = try createRedactionPlan(allocator, &.{secret});
+    var output = std.ArrayListUnmanaged(u8).empty;
+    defer output.deinit(allocator);
+
+    var stderr_discard = std.ArrayListUnmanaged(u8).empty;
+    defer stderr_discard.deinit(allocator);
+
+    var stdout_result = PipeStreamResult{};
+    const stdout_thread = try std.Thread.spawn(.{}, streamPipeRedactedThread, .{
+        pair.masterFile(),
+        redaction_plan,
+        output.writer(allocator),
+        &stdout_result,
+        true, // is_pty
+    });
+
+    // Drain stderr pipe so child doesn't block
+    var stderr_result = PipeStreamResult{};
+    const stderr_thread = try std.Thread.spawn(.{}, streamPipeRedactedThread, .{
+        child.stderr.?,
+        redaction_plan,
+        stderr_discard.writer(allocator),
+        &stderr_result,
+        false, // is_pty
+    });
+    child.stderr = null;
+
+    stdout_thread.join();
+    stderr_thread.join();
+
+    _ = try child.wait();
+
+    if (stdout_result.err) |err| return err;
+
+    // The secret should be fully masked with asterisks
+    try std.testing.expectEqual(secret.len, output.items.len);
+    try std.testing.expect(std.mem.allEqual(u8, output.items, '*'));
+}
+
+test "runChildProcessWithWriters redacts secrets in pipe mode (non-TTY)" {
+    // When the test runner's stdout is a pipe (not a TTY), the code falls
+    // back to plain pipes. Verify redaction still works in that path.
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var stdout_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stdout_arena.deinit();
+    const stdout_alloc = stdout_arena.allocator();
+
+    var stderr_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stderr_arena.deinit();
+    const stderr_alloc = stderr_arena.allocator();
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+
+    const secret = "Qx7mP2vN9kL4rT8yW1cB6hJ3sD5fG0zA";
+    try env_map.put("REDACT_ME", secret);
+
+    const argv = try shellCommandArgv(allocator, "printf '%s' \"$REDACT_ME\"");
+
+    var stdout_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stdout_buf.deinit(stdout_alloc);
+    var stderr_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stderr_buf.deinit(stderr_alloc);
+
+    const exit_code = try runChildProcessWithWriters(
+        allocator,
+        &env_map,
+        &.{secret},
+        argv,
+        stdout_buf.writer(stdout_alloc),
+        stderr_buf.writer(stderr_alloc),
+    );
+
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+    try std.testing.expectEqual(secret.len, stdout_buf.items.len);
+    try std.testing.expect(std.mem.allEqual(u8, stdout_buf.items, '*'));
+}
+
+test "runChildProcessWithWriters passes stdout and stderr to correct writers" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    // Each writer needs its own arena because the redaction threads call
+    // the writer callbacks concurrently. Arena allocators are not thread-safe,
+    // so sharing one arena between the stdout and stderr writers would be a
+    // data race on the arena's internal page pointer.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var stdout_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stdout_arena.deinit();
+    const stdout_alloc = stdout_arena.allocator();
+
+    var stderr_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stderr_arena.deinit();
+    const stderr_alloc = stderr_arena.allocator();
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+
+    // Child writes different content to stdout and stderr
+    const argv = try shellCommandArgv(allocator, "printf 'out-data' && printf 'err-data' >&2");
+
+    var stdout_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stdout_buf.deinit(stdout_alloc);
+    var stderr_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stderr_buf.deinit(stderr_alloc);
+
+    const exit_code = try runChildProcessWithWriters(
+        allocator,
+        &env_map,
+        &.{"not-a-real-secret"},
+        argv,
+        stdout_buf.writer(stdout_alloc),
+        stderr_buf.writer(stderr_alloc),
+    );
+
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+    try std.testing.expectEqualStrings("out-data", stdout_buf.items);
+    try std.testing.expectEqualStrings("err-data", stderr_buf.items);
+}
+
+test "runChildProcessWithWriters with no secrets uses inherit (no pipe/PTY)" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+
+    // Empty redact_values means .Inherit for stdout/stderr — the writers
+    // are not used. The child writes to the real stdout instead.
+    const argv = try shellCommandArgv(allocator, "true");
+
+    var stdout_buf = std.ArrayListUnmanaged(u8).empty;
     defer stdout_buf.deinit(allocator);
     var stderr_buf = std.ArrayListUnmanaged(u8).empty;
     defer stderr_buf.deinit(allocator);
@@ -2309,16 +2710,141 @@ test "runChildProcessWithWriters streams large stdout without buffering it all" 
     const exit_code = try runChildProcessWithWriters(
         allocator,
         &env_map,
-        &.{"not-a-real-secret"},
+        &.{}, // no secrets — .Inherit path
         argv,
         stdout_buf.writer(allocator),
         stderr_buf.writer(allocator),
     );
 
     try std.testing.expectEqual(@as(u8, 0), exit_code);
-    try std.testing.expectEqual(@as(usize, 20_000_000), stdout_buf.items.len);
+    // Writers should not have captured anything since .Inherit was used
+    try std.testing.expectEqual(@as(usize, 0), stdout_buf.items.len);
     try std.testing.expectEqual(@as(usize, 0), stderr_buf.items.len);
-    try std.testing.expect(std.mem.allEqual(u8, stdout_buf.items, 'x'));
+}
+
+test "runChildProcessWithWriters propagates child exit code" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var stdout_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stdout_arena.deinit();
+    var stderr_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stderr_arena.deinit();
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+
+    const argv = try shellCommandArgv(allocator, "exit 42");
+
+    var stdout_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stdout_buf.deinit(stdout_arena.allocator());
+    var stderr_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stderr_buf.deinit(stderr_arena.allocator());
+
+    const exit_code = try runChildProcessWithWriters(
+        allocator,
+        &env_map,
+        &.{"some-secret-value12345678"},
+        argv,
+        stdout_buf.writer(stdout_arena.allocator()),
+        stderr_buf.writer(stderr_arena.allocator()),
+    );
+
+    try std.testing.expectEqual(@as(u8, 42), exit_code);
+}
+
+test "runChildProcessImpl PTY branch: integrated redaction through force_stdout_pty" {
+    // Exercises the actual PTY branch inside runChildProcessImpl by
+    // forcing PTY allocation even though the test runner's stdout is a pipe.
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var stdout_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stdout_arena.deinit();
+    var stderr_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stderr_arena.deinit();
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+
+    const secret = "aB3cD5eF7gH9iJ1kL3mN5oP7qR9sT1u";
+    try env_map.put("PTY_SECRET", secret);
+
+    const argv = try shellCommandArgv(allocator, "printf '%s' \"$PTY_SECRET\"");
+
+    var stdout_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stdout_buf.deinit(stdout_arena.allocator());
+    var stderr_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stderr_buf.deinit(stderr_arena.allocator());
+
+    const exit_code = try runChildProcessImpl(
+        allocator,
+        &env_map,
+        &.{secret},
+        argv,
+        stdout_buf.writer(stdout_arena.allocator()),
+        stderr_buf.writer(stderr_arena.allocator()),
+        true, // force_stdout_pty
+        false,
+    );
+
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+    // Secret should be fully redacted
+    try std.testing.expectEqual(secret.len, stdout_buf.items.len);
+    try std.testing.expect(std.mem.allEqual(u8, stdout_buf.items, '*'));
+}
+
+test "runChildProcessImpl PTY branch: multiline secret with newlines is fully redacted" {
+    // Verifies that OPOST is disabled on PTY slaves — without it, \n would
+    // become \r\n and the exact-byte redaction match would fail, leaking
+    // the secret.
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var stdout_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stdout_arena.deinit();
+    var stderr_arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer stderr_arena.deinit();
+
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+
+    // A multiline secret with embedded newlines
+    const secret = "line1-aB3cD5eF7gH9\nline2-iJ1kL3mN5oP7\nline3-qR9sT1uV3wX5y";
+    try env_map.put("MULTILINE_SECRET", secret);
+
+    // printf '%s' preserves exact bytes including \n, no extra trailing newline
+    const argv = try shellCommandArgv(allocator, "printf '%s' \"$MULTILINE_SECRET\"");
+
+    var stdout_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stdout_buf.deinit(stdout_arena.allocator());
+    var stderr_buf = std.ArrayListUnmanaged(u8).empty;
+    defer stderr_buf.deinit(stderr_arena.allocator());
+
+    const exit_code = try runChildProcessImpl(
+        allocator,
+        &env_map,
+        &.{secret},
+        argv,
+        stdout_buf.writer(stdout_arena.allocator()),
+        stderr_buf.writer(stderr_arena.allocator()),
+        true, // force_stdout_pty — exercise PTY path
+        false,
+    );
+
+    try std.testing.expectEqual(@as(u8, 0), exit_code);
+    // Every byte of the secret (including \n) must be redacted
+    try std.testing.expectEqual(secret.len, stdout_buf.items.len);
+    try std.testing.expect(std.mem.allEqual(u8, stdout_buf.items, '*'));
 }
 
 test "run command keeps argv after double dash as positional command" {
