@@ -8,3 +8,4 @@ tmp
 .env*
 .zig-cache
 zig-out
+dummy-non-existing-folder
