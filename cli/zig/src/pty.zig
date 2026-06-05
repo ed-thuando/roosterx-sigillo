@@ -80,7 +80,13 @@ pub fn copyWinsize(src_fd: std.posix.fd_t, dst_fd: std.posix.fd_t) void {
 
 const linux = struct {
     fn open() !PtyPair {
-        const master = try std.posix.openat(std.posix.AT.FDCWD, "/dev/ptmx", .{ .ACCMODE = .RDWR, .NOCTTY = true }, 0);
+        // CLOEXEC so the raw PTY fds are not inherited by the child process.
+        // The dup2'd copies onto STDOUT/STDERR are separate fds and remain
+        // inheritable. Without CLOEXEC, a backgrounded grandchild holding the
+        // inherited slave fd would keep the PTY alive and hang the redaction
+        // reader waiting for EOF/EIO.
+        const flags: std.posix.O = .{ .ACCMODE = .RDWR, .NOCTTY = true, .CLOEXEC = true };
+        const master = try std.posix.openat(std.posix.AT.FDCWD, "/dev/ptmx", flags, 0);
         errdefer std.posix.close(master);
 
         // unlockpt via ioctl (TIOCSPTLCK) — use raw syscall with u32 request
@@ -94,7 +100,7 @@ const linux = struct {
 
         var buf: [24]u8 = undefined;
         const sname = try std.fmt.bufPrint(&buf, "/dev/pts/{d}", .{n});
-        const slave = try std.posix.openat(std.posix.AT.FDCWD, sname, .{ .ACCMODE = .RDWR, .NOCTTY = true }, 0);
+        const slave = try std.posix.openat(std.posix.AT.FDCWD, sname, flags, 0);
 
         return .{ .master = master, .slave = slave };
     }
@@ -109,7 +115,8 @@ const darwin = struct {
     extern fn ptsname(fd: std.posix.fd_t) ?[*:0]u8;
 
     fn open() !PtyPair {
-        const master = darwin.posix_openpt(std.posix.O{ .ACCMODE = .RDWR, .NOCTTY = true });
+        const flags: std.posix.O = .{ .ACCMODE = .RDWR, .NOCTTY = true, .CLOEXEC = true };
+        const master = darwin.posix_openpt(flags);
         if (master < 0) return error.OpenPtyFailed;
         errdefer std.posix.close(master);
 
@@ -118,7 +125,7 @@ const darwin = struct {
 
         const sname_ptr = darwin.ptsname(master) orelse return error.PtsnameFailed;
         const sname = std.mem.sliceTo(sname_ptr, 0);
-        const slave = try std.posix.openat(std.posix.AT.FDCWD, sname, .{ .ACCMODE = .RDWR, .NOCTTY = true }, 0);
+        const slave = try std.posix.openat(std.posix.AT.FDCWD, sname, flags, 0);
 
         return .{ .master = master, .slave = slave };
     }
@@ -133,7 +140,8 @@ const bsd = struct {
     extern fn ptsname_r(fd: std.posix.fd_t, buf: [*]u8, len: usize) c_int;
 
     fn open() !PtyPair {
-        const master = bsd.posix_openpt(std.posix.O{ .ACCMODE = .RDWR, .NOCTTY = true });
+        const flags: std.posix.O = .{ .ACCMODE = .RDWR, .NOCTTY = true, .CLOEXEC = true };
+        const master = bsd.posix_openpt(flags);
         if (master < 0) return error.OpenPtyFailed;
         errdefer std.posix.close(master);
 
@@ -143,7 +151,7 @@ const bsd = struct {
         var sname_buf: [64]u8 = undefined;
         if (bsd.ptsname_r(master, &sname_buf, sname_buf.len) != 0) return error.PtsnameFailed;
         const sname = std.mem.sliceTo(&sname_buf, 0);
-        const slave = try std.posix.openat(std.posix.AT.FDCWD, sname, .{ .ACCMODE = .RDWR, .NOCTTY = true }, 0);
+        const slave = try std.posix.openat(std.posix.AT.FDCWD, sname, flags, 0);
 
         return .{ .master = master, .slave = slave };
     }
