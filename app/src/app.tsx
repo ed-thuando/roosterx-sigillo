@@ -37,7 +37,7 @@ function isTruthy<T>(value: T | null | undefined): value is T {
 function safeRedirectPath(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/'
   if (['/', '/device'].includes(value)) return value
-  if (value.startsWith('/dash/') || value.startsWith('/invite/')) return value
+  if (value === '/dash' || value.startsWith('/dash/') || value.startsWith('/invite/')) return value
   return '/'
 }
 
@@ -191,57 +191,57 @@ export const app = new Spiceflow()
     )
   })
 
-  // ── Root redirect for authenticated users ──────────────────────
-  // Logged-in users hitting "/" get sent to their dashboard.
-  // Unauthenticated users fall through to holocron's landing page.
-  // Uses middleware instead of .get() so unauthenticated requests
-  // pass through to holocron without returning null.
-  .use('/', async ({ request }) => {
-    if (request.method !== 'GET') return
-    const url = new URL(request.url)
-    if (url.pathname !== '/') return
+  // ── /dash redirect → resolve user's default project+env in one hop ──
+  // The holocron navbar links to /dash. This resolves the full path
+  // (org → project → env) in a single worker invocation instead of
+  // chaining through /dash/orgs/:orgId → /dash/projects/:id → /envs/:slug.
+  .get('/dash', async ({ request }) => {
     const session = await getSession(request)
-    if (!session) return // fall through to holocron landing page
+    if (!session) return Response.redirect(new URL('/login?redirect=/dash', request.url).toString(), 302)
     const db = getDb()
-    try {
-      const members = await db.query.orgMember.findMany({
-        where: { userId: session.userId },
-        with: { org: true },
-      })
-      const lastOrg = members
-        .filter((m) => m.org != null)
-        .sort((a, b) => b.org!.createdAt! - a.org!.createdAt!)
-        [0]
-      if (lastOrg) {
-        return Response.redirect(new URL(`/dash/orgs/${encodeURIComponent(lastOrg.org!.id)}`, url).toString(), 302)
-      }
-    } catch {}
-    return Response.redirect(new URL('/dash/new-org', url).toString(), 302)
+    const members = await db.query.orgMember.findMany({
+      where: { userId: session.userId },
+      with: { org: true },
+    })
+    const lastOrg = members
+      .filter((m) => m.org != null)
+      .sort((a, b) => b.org!.createdAt! - a.org!.createdAt!)
+      [0]
+    if (!lastOrg) {
+      return Response.redirect(new URL('/dash/new-org', request.url).toString(), 302)
+    }
+    const firstProject = await db.query.project.findFirst({
+      where: { orgId: lastOrg.org!.id },
+      columns: { id: true },
+      with: { environments: { columns: { slug: true, createdAt: true } } },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (firstProject) {
+      const sortedEnvs = [...(firstProject.environments || [])].sort((a, b) => a.createdAt - b.createdAt)
+      const envSlug = sortedEnvs[0]?.slug ?? '_'
+      const href = `/dash/projects/${encodeURIComponent(firstProject.id)}/envs/${encodeURIComponent(envSlug)}`
+      return Response.redirect(new URL(href, request.url).toString(), 302)
+    }
+    return Response.redirect(new URL(`/dash/orgs/${encodeURIComponent(lastOrg.org!.id)}`, request.url).toString(), 302)
   })
 
-  // ── Org root redirect → first project ─────────────────────────
+  // ── Org root redirect → resolve first project+env in one hop ──
   .get('/dash/orgs/:orgId', async ({ params, request }) => {
     const session = await requirePageSession(request)
     await requirePageOrgMember(session.userId, params.orgId)
     const db = getDb()
-    const base = new URL(request.url)
-    try {
-      // Only need the org's first project + its envs to build the redirect, so
-      // fetch a single row instead of the whole project list.
-      const firstProject = await db.query.project.findFirst({
-        where: { orgId: params.orgId },
-        columns: { id: true },
-        with: { environments: { columns: { slug: true, createdAt: true } } },
-        orderBy: { createdAt: 'desc' },
-      })
-      if (firstProject) {
-        const sortedEnvs = [...(firstProject.environments || [])].sort((a, b) => a.createdAt - b.createdAt)
-        const href = sortedEnvs[0]
-          ? `/dash/projects/${encodeURIComponent(firstProject.id)}/envs/${encodeURIComponent(sortedEnvs[0].slug)}`
-          : `/dash/projects/${encodeURIComponent(firstProject.id)}`
-        return Response.redirect(new URL(href, base).toString(), 302)
-      }
-    } catch {}
+    const firstProject = await db.query.project.findFirst({
+      where: { orgId: params.orgId },
+      columns: { id: true },
+      with: { environments: { columns: { slug: true, createdAt: true } } },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (firstProject) {
+      const sortedEnvs = [...(firstProject.environments || [])].sort((a, b) => a.createdAt - b.createdAt)
+      const envSlug = sortedEnvs[0]?.slug ?? '_'
+      const href = `/dash/projects/${encodeURIComponent(firstProject.id)}/envs/${encodeURIComponent(envSlug)}`
+      return Response.redirect(new URL(href, request.url).toString(), 302)
+    }
     return null
   })
 
