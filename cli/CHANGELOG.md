@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.11.0
+
+1. **TTY-aware secret redaction with PTY passthrough** — `sigillo run` now uses pseudo-terminals instead of pipes when stdout/stderr are TTYs. Child processes see `isatty()=true`, so tools like `next dev`, `cargo`, and `pytest` keep their colored output, progress bars, and interactive prompts while secrets are still redacted from the output stream:
+
+   ```bash
+   # colored output and progress bars work normally now
+   sigillo run -- next dev
+   sigillo run -- cargo build --color=always
+   ```
+
+   Falls back to pipes automatically when the parent streams are not TTYs or on Windows. PTY slaves have OPOST disabled so `\n` is not transformed to `\r\n`, keeping exact-byte redaction matching for multiline secrets. Terminal window size is propagated from parent to child.
+
+2. **Git worktree config inheritance** — running `sigillo` inside a git worktree now automatically inherits the project, environment, token, and API URL from the main repo if no worktree-specific config exists:
+
+   ```bash
+   # set up once in the main repo
+   cd my-project && sigillo setup
+
+   # worktrees pick it up automatically
+   cd ../my-project-feature-branch
+   sigillo secrets   # works without re-running setup
+   ```
+
+   Worktree-specific scopes still take priority. Supports relative `gitdir:` paths and Git-for-Windows forward-slash paths. Submodules are correctly excluded.
+
+3. **Empty and missing secrets shown in `sigillo secrets`** — the secrets list now highlights secrets with empty values (`empty: true` in yellow) and shows a separate `missing:` section for secrets that exist in other environments of the same project but not the current one:
+
+   ```bash
+   sigillo secrets -c production
+   ```
+
+   ```yaml
+   secrets:
+     - name: DATABASE_URL
+       ...
+     - name: PLACEHOLDER_KEY
+       empty: true          # yellow in terminal
+   missing:                 # red in terminal
+     - STRIPE_SECRET_KEY    # exists in staging but not production
+   ```
+
+   Non-TTY output stays valid YAML for scripting.
+
+4. **Empty values allowed in interactive prompt** — `sigillo secrets set` no longer rejects empty values when prompted interactively. Useful for creating placeholder secrets you fill in later via the dashboard:
+
+   ```bash
+   sigillo secrets set FUTURE_KEY -c dev
+   ? Value for FUTURE_KEY:
+   note: setting empty value (fill in later via dashboard)
+   ```
+
+5. **Fixed deadlock on exec failure** — when the child command does not exist, `sigillo run` no longer hangs. The errdefer now kills the child before joining reader threads, and unreapable spawn errors are handled without leaving zombie processes.
+
+6. **Fixed PTY fd leaks causing child hangs** — PTY master and slave file descriptors are now opened with CLOEXEC so backgrounded child subprocesses don't inherit and hold open the slave fd, which previously caused the redaction reader to hang waiting for EOF.
+
+7. **Fixed use-after-free in PTY redaction** — corrected defer/errdefer ordering so redaction plan memory stays alive while reader threads are still running. Also fixed double-close of PTY fds by tracking ownership with nullable variables.
+
 ## 0.10.0
 
 1. **Set or delete a secret across many environments at once** — `-c`/`--config` (and `--env`) are now repeatable on `secrets set` and `secrets delete`, so a single command fans out to every environment you list:
