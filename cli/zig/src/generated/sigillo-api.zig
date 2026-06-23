@@ -131,10 +131,12 @@ pub const SecretListResponseSecretsItem = struct {
     name: []const u8,
     createdAt: std.json.Value,
     updatedAt: f64,
+    isEmpty: bool,
 };
 pub const SecretListResponse = struct {
     environmentId: []const u8,
     secrets: []const SecretListResponseSecretsItem,
+    allNames: []const []const u8,
 };
 pub const SecretValueResponse = struct {
     id: []const u8,

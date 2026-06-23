@@ -13,6 +13,7 @@ pub const dim_s = "\x1b[2m";
 pub const red_s = "\x1b[31m";
 pub const green_s = "\x1b[32m";
 pub const blue_s = "\x1b[34m";
+pub const yellow_s = "\x1b[33m";
 pub const cyan_s = "\x1b[36m";
 
 pub fn isTty(writer: Writer) bool {
@@ -55,6 +56,14 @@ pub fn cyan(w: Writer, text: []const u8) !void {
 pub fn dim(w: Writer, text: []const u8) !void {
     if (isTty(w)) {
         try w.writeAll(dim_s);
+        try w.writeAll(text);
+        try w.writeAll(reset);
+    } else try w.writeAll(text);
+}
+
+pub fn yellow(w: Writer, text: []const u8) !void {
+    if (isTty(w)) {
+        try w.writeAll(yellow_s);
         try w.writeAll(text);
         try w.writeAll(reset);
     } else try w.writeAll(text);

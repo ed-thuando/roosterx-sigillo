@@ -738,6 +738,68 @@ describe('secrets derivation — batching & multi-author', () => {
 
 // ── Encryption roundtrip ────────────────────────────────────────────
 
+// ── Secrets list — isEmpty and allNames ─────────────────────────────
+
+describe('secrets list — isEmpty and allNames', () => {
+  let af: ReturnType<typeof authedFetch>
+  let projectId: string
+  let devEnvId: string
+  let prodEnvId: string
+
+  beforeAll(async () => {
+    const user = await createTestUser({ name: 'ListFieldsUser' })
+    af = authedFetch(user.token)
+    const org = assertOk(await af('/api/v0/orgs', { method: 'POST', body: { name: 'ListFields Org' } }))
+    const proj = assertOk(await af('/api/v0/projects', { method: 'POST', body: { name: 'ListFields Project', orgId: org.id } }))
+    projectId = proj.id
+    const envs = assertOk(await af('/api/v0/projects/:pid/environments', { params: { pid: projectId } }))
+    devEnvId = envs.environments.find((e) => e.slug === 'dev')!.id
+    prodEnvId = envs.environments.find((e) => e.slug === 'prod')!.id
+  })
+
+  test('isEmpty is true for empty-string secrets', async () => {
+    // Set a normal secret and an empty-string secret in dev
+    assertOk(await af('/api/v0/projects/:pid/environments/:eid/secrets', {
+      method: 'POST', params: { pid: projectId, eid: devEnvId },
+      body: { name: 'HAS_VALUE', value: 'some-value' },
+    }))
+    assertOk(await af('/api/v0/projects/:pid/environments/:eid/secrets', {
+      method: 'POST', params: { pid: projectId, eid: devEnvId },
+      body: { name: 'EMPTY_SECRET', value: '' },
+    }))
+
+    const result = assertOk(await af('/api/v0/projects/:pid/environments/:eid/secrets', {
+      params: { pid: projectId, eid: devEnvId },
+    }))
+
+    const hasValue = result.secrets.find((s) => s.name === 'HAS_VALUE')
+    const emptySecret = result.secrets.find((s) => s.name === 'EMPTY_SECRET')
+    expect(hasValue!.isEmpty).toBe(false)
+    expect(emptySecret!.isEmpty).toBe(true)
+  })
+
+  test('allNames includes secrets from all environments', async () => {
+    // Set a secret only in prod (not in dev)
+    assertOk(await af('/api/v0/projects/:pid/environments/:eid/secrets', {
+      method: 'POST', params: { pid: projectId, eid: prodEnvId },
+      body: { name: 'PROD_ONLY', value: 'prod-value' },
+    }))
+
+    const result = assertOk(await af('/api/v0/projects/:pid/environments/:eid/secrets', {
+      params: { pid: projectId, eid: devEnvId },
+    }))
+
+    // allNames should include secrets from both dev and prod
+    expect(result.allNames).toContain('HAS_VALUE')
+    expect(result.allNames).toContain('EMPTY_SECRET')
+    expect(result.allNames).toContain('PROD_ONLY')
+
+    // PROD_ONLY should NOT be in the secrets array (it's only in prod)
+    const prodOnly = result.secrets.find((s) => s.name === 'PROD_ONLY')
+    expect(prodOnly).toBeUndefined()
+  })
+})
+
 describe('encryption roundtrip', () => {
   test('encrypt then decrypt returns original', async () => {
     const { encrypted, iv } = await encrypt('hello-world')

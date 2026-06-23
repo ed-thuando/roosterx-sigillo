@@ -20,8 +20,10 @@ import {
   requireSecretsApiAuth,
   getOrgIdForProject,
   getOrgIdForEnvironment,
+  getProjectIdForEnvironment,
   resolveEnvironment,
   deriveSecrets,
+  deriveEnvironmentSecretsAndNames,
   encrypt,
   decrypt,
 } from './db.ts'
@@ -126,16 +128,21 @@ const projectDeleteResponseSchema = z.object({
   id: z.string(),
 })
 
-const secretSummarySchema = secretEventSelectSchema
+const secretBaseSummarySchema = secretEventSelectSchema
   .pick({ id: true, name: true, createdAt: true })
   .extend({ updatedAt: z.number() })
 
-const secretListResponseSchema = z.object({
-  environmentId: z.string(),
-  secrets: z.array(secretSummarySchema),
+const secretListItemSchema = secretBaseSummarySchema.extend({
+  isEmpty: z.boolean(),
 })
 
-const secretValueResponseSchema = secretSummarySchema.extend({
+const secretListResponseSchema = z.object({
+  environmentId: z.string(),
+  secrets: z.array(secretListItemSchema),
+  allNames: z.array(z.string()),
+})
+
+const secretValueResponseSchema = secretBaseSummarySchema.extend({
   value: z.string(),
   environmentId: secretEventSelectSchema.shape.environmentId,
 })
@@ -607,12 +614,32 @@ export const apiApp = new Spiceflow()
     response: secretListResponseSchema,
     async handler({ params, request }): Promise<any> {
       const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
-      const derived = await deriveSecrets(auth.environmentId)
-      const secrets = derived.map((d) => ({
-        id: d.id, name: d.name,
-        createdAt: d.createdAt, updatedAt: d.updatedAt,
+      const db = getDb()
+
+      // Derive projectId from the authenticated environment, not the URL param,
+      // so a token for project A can't leak allNames from project B's URL.
+      const authProjectId = await getProjectIdForEnvironment(auth.environmentId)
+      const environments = await db.query.environment.findMany({
+        where: { projectId: authProjectId! },
+        columns: { id: true },
+      })
+      const environmentIds = environments.map((e) => e.id)
+
+      const { secrets: derived, allNames } = await deriveEnvironmentSecretsAndNames({
+        environmentIds,
+        selectedEnvId: auth.environmentId,
+      })
+
+      // Decrypt each value to check if it's empty
+      const secrets = await Promise.all(derived.map(async (d) => {
+        const value = await decrypt(d.valueEncrypted, d.iv)
+        return {
+          id: d.id, name: d.name,
+          createdAt: d.createdAt, updatedAt: d.updatedAt,
+          isEmpty: value === '',
+        }
       }))
-      return { environmentId: auth.environmentId, secrets }
+      return { environmentId: auth.environmentId, secrets, allNames }
     },
   })
 

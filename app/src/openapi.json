@@ -1105,20 +1105,31 @@
                           "createdAt": {},
                           "updatedAt": {
                             "type": "number"
+                          },
+                          "isEmpty": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
                           "id",
                           "name",
                           "createdAt",
-                          "updatedAt"
+                          "updatedAt",
+                          "isEmpty"
                         ]
+                      }
+                    },
+                    "allNames": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
                       }
                     }
                   },
                   "required": [
                     "environmentId",
-                    "secrets"
+                    "secrets",
+                    "allNames"
                   ]
                 }
               }
