@@ -103,7 +103,7 @@ export function EventLogTable() {
                 return (
                   <TableRow key={evt.id}>
                     <TableCell>
-                      <span className="text-sm font-mono font-medium">{evt.name}</span>
+                      <span className="text-sm mono-sm font-medium">{evt.name}</span>
                     </TableCell>
                     <TableCell>
                       {evt.operation === "set" ? (
@@ -121,7 +121,7 @@ export function EventLogTable() {
                         <div className="flex items-center gap-1.5">
                           <span
                             className={cn(
-                              "text-sm font-mono truncate min-w-0 flex-1",
+                              "text-sm mono-sm truncate min-w-0 flex-1",
                               !isVisible && "text-security-disc",
                             )}
                           >

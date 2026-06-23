@@ -65,7 +65,7 @@ export function DeviceFlow({ initialCode = '' }: { initialCode?: string }) {
             onChange={(e) => setUserCode(e.target.value)}
             placeholder="ABCD-EFGH"
             maxLength={12}
-            className="h-12 text-center text-2xl font-mono tracking-[0.25em] uppercase"
+            className="h-12 text-center text-2xl mono-sm tracking-[0.25em] uppercase"
           />
           <Button
             type="submit"

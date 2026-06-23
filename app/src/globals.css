@@ -236,3 +236,8 @@
   );
   background-size: 6px 100%;
 }
+
+.mono-sm {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+}

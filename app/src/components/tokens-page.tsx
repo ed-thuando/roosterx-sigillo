@@ -93,7 +93,7 @@ function TokensTable() {
                 <span className="text-sm font-medium">{token.name}</span>
               </TableCell>
               <TableCell>
-                <code className="text-xs text-muted-foreground font-mono">
+                <code className="text-xs text-muted-foreground mono-sm">
                   sig_{token.prefix}••••
                 </code>
               </TableCell>
@@ -191,7 +191,7 @@ function CreateTokenDialog({
               <Input
                 readOnly
                 value={createdKey}
-                className="w-full font-mono text-xs"
+                className="w-full mono-sm text-xs"
                 onClick={(e) => e.currentTarget.select()}
               />
               <Button variant="outline" size="icon" onClick={handleCopy}>
