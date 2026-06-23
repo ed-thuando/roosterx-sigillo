@@ -112,7 +112,7 @@ function EditableEnvCell({ env, field }: { env: Environment; field: "name" | "sl
           onChange={(e) => setValue(e.target.value)}
           onBlur={save}
           autoFocus
-          className={cn("h-7 w-full", field === "slug" && "font-mono")}
+          className={cn("h-7 w-full", field === "slug" && "mono-sm")}
         />
       </form>
     );
@@ -131,7 +131,7 @@ function EditableEnvCell({ env, field }: { env: Environment; field: "name" | "sl
         </span>
       ) : (
         <Badge variant="outline" size="default">
-          <span className="font-mono">{env.slug}</span>
+          <span className="mono-sm">{env.slug}</span>
         </Badge>
       )}
       <PencilIcon className="size-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -297,7 +297,7 @@ export function EnvironmentsTable() {
                 inputSize="sm"
                 placeholder="slug"
                 required
-                className="flex-1 font-mono"
+                className="flex-1 mono-sm"
               />
               <Button size="xs" type="submit">
                 Add

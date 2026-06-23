@@ -89,7 +89,7 @@ export function HeroSection() {
             <a
               target='_blank'
               rel='noopener noreferrer'
-              className='flex items-center gap-1.5 text-[13px] font-mono text-foreground/70 hover:text-foreground transition-colors no-underline'
+              className='flex items-center gap-1.5 text-[13px] mono-sm text-foreground/70 hover:text-foreground transition-colors no-underline'
               href={GITHUB_URL}
             >
               <GithubIcon size={14} />
@@ -98,7 +98,7 @@ export function HeroSection() {
             <a
               target='_blank'
               rel='noopener noreferrer'
-              className='flex items-center gap-1.5 text-[13px] font-mono text-foreground/70 hover:text-foreground transition-colors no-underline'
+              className='flex items-center gap-1.5 text-[13px] mono-sm text-foreground/70 hover:text-foreground transition-colors no-underline'
               href={X_URL}
             >
               <XIcon size={12} />
@@ -107,7 +107,7 @@ export function HeroSection() {
           </div>
           <a
             href='#quick-start'
-            className='mt-6 mb-2 flex flex-col items-center gap-1 text-[11px] font-mono text-foreground/30 hover:text-foreground/60 transition-colors no-underline'
+            className='mt-6 mb-2 flex flex-col items-center gap-1 text-[11px] mono-sm text-foreground/30 hover:text-foreground/60 transition-colors no-underline'
           >
             Learn more
             <ArrowDown size={12} />

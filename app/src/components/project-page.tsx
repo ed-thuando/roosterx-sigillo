@@ -73,12 +73,12 @@ function CliBanner() {
             Use the Sigillo CLI
           </h2>
           <p className="text-sm leading-6 text-muted-foreground">
-            Install with npm, then use <code className="font-mono text-foreground">sigillo run</code> to pass secrets to your process. Output is redacted by default.
+            Install with npm, then use <code className="mono-sm text-foreground">sigillo run</code> to pass secrets to your process. Output is redacted by default.
           </p>
         </div>
 
         <pre className="cli-banner-code overflow-x-auto rounded-xl border border-border/70 bg-background/95 p-4 text-[12px]">
-          <code className="block font-mono">
+          <code className="block mono-sm">
             {cliBannerCodeLines.map((line, i) => (
               <span key={i} className="flex gap-x-4 leading-6">
                 <span className="w-5 shrink-0 select-none text-right text-muted-foreground/80">

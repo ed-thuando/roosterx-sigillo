@@ -86,7 +86,7 @@ function SecretValueCell({
           }
         }}
         className={cn(
-          "min-w-0 max-w-full flex-1 font-mono",
+          "min-w-0 max-w-full flex-1 mono-sm",
           visible ? "bg-muted/50" : "text-security-disc border-transparent bg-muted/50 cursor-pointer select-none",
           isDirty && "border-amber-400/50 focus:ring-amber-500",
         )}
@@ -303,7 +303,7 @@ export function SecretsTable({
                       value={edits[secret.id]?.name ?? secret.name}
                       onChange={(e) => setEdit(secret.id, "name", e.target.value)}
                       className={cn(
-                        "w-full min-w-0 border-transparent bg-transparent px-1.5 font-mono font-medium focus:border-input hover:border-input",
+                        "w-full min-w-0 border-transparent bg-transparent px-1.5 mono-sm font-medium focus:border-input hover:border-input",
                         isDirty && "text-amber-700 dark:text-amber-400 border-amber-400/50 focus:ring-amber-500",
                       )}
                     />
@@ -341,7 +341,7 @@ export function SecretsTable({
               return (
                 <TableRow key={`missing-${name}`} className="bg-destructive/5 dark:bg-destructive/10">
                   <TableCell className="min-w-0 whitespace-normal">
-                    <span className="block break-all px-1.5 font-mono text-sm font-medium text-destructive">
+                    <span className="block break-all px-1.5 mono-sm text-sm font-medium text-destructive">
                       {name}
                     </span>
                   </TableCell>
@@ -356,7 +356,7 @@ export function SecretsTable({
                       value={missingEdits[name] ?? ""}
                       onChange={(e) => setMissingEdits((prev) => ({ ...prev, [name]: e.target.value }))}
                        className={cn(
-                         "w-full min-w-0 font-mono border-destructive/40",
+                         "w-full min-w-0 mono-sm border-destructive/40",
                          hasValue ? "bg-amber-50/50 dark:bg-amber-950/20" : "text-security-disc bg-transparent",
                        )}
                      />
@@ -386,7 +386,7 @@ export function SecretsTable({
                       value={secret.name}
                       onChange={(e) => updateNewSecret(secret.id, "name", e.target.value)}
                       placeholder="SECRET_KEY"
-                      className="w-full min-w-0 border-transparent bg-transparent px-1.5 font-mono font-medium focus:border-input hover:border-input"
+                      className="w-full min-w-0 border-transparent bg-transparent px-1.5 mono-sm font-medium focus:border-input hover:border-input"
                     />
                   </TableCell>
                   <TableCell className="min-w-0 overflow-hidden">
@@ -399,7 +399,7 @@ export function SecretsTable({
                       value={secret.value}
                       onChange={(e) => updateNewSecret(secret.id, "value", e.target.value)}
                       placeholder="secret value"
-                      className="w-full min-w-0 border-transparent bg-transparent px-1.5 font-mono focus:border-input hover:border-input"
+                      className="w-full min-w-0 border-transparent bg-transparent px-1.5 mono-sm focus:border-input hover:border-input"
                     />
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
@@ -558,7 +558,7 @@ function ImportEnvDialog({
             autoFocus
             placeholder={"DATABASE_URL=postgres://...\nAPI_KEY=sk-...\nSECRET_TOKEN=abc123"}
             rows={8}
-            className="font-mono"
+            className="mono-sm"
           />
           <DialogFooter variant="bare" className="mt-4">
             <DialogClose render={<Button variant="outline" />}>
