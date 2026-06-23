@@ -1614,10 +1614,44 @@ fn secretsAction(_: Secrets.Args, opts: Secrets.Options, global: Global.Options)
     const payload = res.value.?;
     const env_id = try quoteString(allocator, payload.environmentId);
     try stdout.print("environment_id: {s}\nsecrets:\n", .{env_id});
+
+    // Build a set of secret names present in this environment
+    var present_names = std.StringHashMap(void).init(allocator);
+    for (payload.secrets) |secret| {
+        try present_names.put(secret.name, {});
+    }
+
+    // Print existing secrets with empty indicator
     for (payload.secrets) |secret| {
         const id = try quoteString(allocator, secret.id);
         const name = try quoteString(allocator, secret.name);
         try stdout.print("  - id: {s}\n    name: {s}\n", .{ id, name });
+        if (secret.isEmpty) {
+            try stdout.writeAll("    empty: true");
+            if (color.isTty(stdout)) {
+                try stdout.writeAll("  ");
+                try color.yellow(stdout, "# value is empty string");
+            }
+            try stdout.writeAll("\n");
+        }
+    }
+
+    // Print secrets that exist in other environments but are missing here
+    var has_missing = false;
+    for (payload.allNames) |name| {
+        if (!present_names.contains(name)) {
+            if (!has_missing) {
+                try stdout.writeAll("missing:\n");
+                has_missing = true;
+            }
+            const quoted = try quoteString(allocator, name);
+            try stdout.print("  - name: {s}", .{quoted});
+            if (color.isTty(stdout)) {
+                try stdout.writeAll("  ");
+                try color.err(stdout, "# not in this environment");
+            }
+            try stdout.writeAll("\n");
+        }
     }
 }
 
