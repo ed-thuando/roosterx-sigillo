@@ -257,7 +257,8 @@ const SecretsGet = zeke.cmd("secrets get <name>", "Get a secret value")
     .option("-p, --project [id]", "Project ID override")
     .option("--env [slug]", "Env slug override (e.g. dev, prod)")
     .option("-c, --config [slug]", "Env slug override")
-    .option("--force", "Allow printing secret values in agent shells");
+    .option("--force", "Allow printing secret values in agent shells")
+    .option("--raw", "Output only the raw value (no YAML wrapping)");
 
 const SecretsSet = zeke.cmd("secrets set <name> [value]", "Set a secret value (omit value for a masked prompt or stdin)")
     .option("-p, --project [id]", "Project ID override")
@@ -1688,14 +1689,24 @@ fn secretsGetAction(args: SecretsGet.Args, opts: SecretsGet.Options, global: Glo
     }
 
     const secret = res.value.?;
-    try stdout.print(
-        "environment_id: {s}\nname: {s}\nvalue: {s}\n",
-        .{
-            try quoteString(allocator, secret.environmentId),
-            try quoteString(allocator, secret.name),
-            try quoteString(allocator, secret.value),
-        },
-    );
+    // When stdout is piped (not a TTY) or --raw is passed, output just the raw
+    // value so `sigillo secrets get X | sigillo secrets set Y` works correctly.
+    const stdout_is_tty = std.posix.isatty(File.stdout().handle);
+    if (opts.raw or !stdout_is_tty) {
+        try stdout.writeAll(secret.value);
+        // Add a trailing newline only when writing to a TTY with --raw,
+        // so piped output is the exact value with no trailing newline.
+        if (stdout_is_tty) try stdout.writeAll("\n");
+    } else {
+        try stdout.print(
+            "environment_id: {s}\nname: {s}\nvalue: {s}\n",
+            .{
+                try quoteString(allocator, secret.environmentId),
+                try quoteString(allocator, secret.name),
+                try quoteString(allocator, secret.value),
+            },
+        );
+    }
 }
 
 fn secretsSetAction(args: SecretsSet.Args, opts: SecretsSet.Options, global: Global.Options) !void {

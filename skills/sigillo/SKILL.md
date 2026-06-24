@@ -88,6 +88,19 @@ To read a specific value:
 sigillo secrets get DATABASE_URL
 ```
 
+When stdout is piped, `secrets get` outputs only the raw value (no YAML wrapping). This makes piping between commands work naturally:
+
+```bash
+# copy a secret between environments (raw value flows through stdin)
+sigillo secrets get DATABASE_URL -c dev | sigillo secrets set DATABASE_URL -c preview
+```
+
+Use `--raw` to force raw output even in a terminal (useful for scripting):
+
+```bash
+sigillo secrets get DATABASE_URL --raw
+```
+
 **5. Run your app with secrets injected:**
 
 ```bash
@@ -113,11 +126,11 @@ Never read a secret value into the agent context window or pass it as plain text
 **Copying a secret from one env to another:**
 
 ```bash
-# value flows through stdin, never seen by the agent
+# raw value flows through stdin, never seen by the agent
 sigillo secrets get DATABASE_URL -c dev | sigillo secrets set DATABASE_URL -c preview
 ```
 
-The same pattern works for any secret copy — between environments, or when seeding a new environment from an existing one.
+This works because `secrets get` auto-detects piped stdout and outputs only the raw value (no YAML). The same pattern works for any secret copy, between environments, or when seeding a new environment from an existing one.
 
 ### Never read `.env` files or `~/.sigillo/*`
 
