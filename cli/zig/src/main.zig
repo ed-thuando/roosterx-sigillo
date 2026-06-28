@@ -1613,6 +1613,17 @@ fn secretsAction(_: Secrets.Args, opts: Secrets.Options, global: Global.Options)
     }
 
     const payload = res.value.?;
+
+    // When stdout is piped (not a TTY), output one secret name per line
+    // so callers can pipe to xargs, grep, etc.
+    const stdout_is_tty = std.posix.isatty(File.stdout().handle);
+    if (!stdout_is_tty) {
+        for (payload.secrets) |secret| {
+            try stdout.print("{s}\n", .{secret.name});
+        }
+        return;
+    }
+
     const env_id = try quoteString(allocator, payload.environmentId);
     try stdout.print("environment_id: {s}\nsecrets:\n", .{env_id});
 
@@ -1782,14 +1793,21 @@ fn secretsSetAction(args: SecretsSet.Args, opts: SecretsSet.Options, global: Glo
         }
 
         const secret = res.value.?;
-        try stdout.print(
-            "ok: true\nenvironment_id: {s}\nid: {s}\nname: {s}\n",
-            .{
-                try quoteString(allocator, secret.environmentId),
-                try quoteString(allocator, secret.id),
-                try quoteString(allocator, secret.name),
-            },
-        );
+        // When stdout is piped, output just the secret ID per env so callers
+        // can capture it: ID=$(sigillo secrets set X Y)
+        const stdout_is_tty = std.posix.isatty(File.stdout().handle);
+        if (!stdout_is_tty) {
+            try stdout.print("{s}\n", .{secret.id});
+        } else {
+            try stdout.print(
+                "ok: true\nenvironment_id: {s}\nid: {s}\nname: {s}\n",
+                .{
+                    try quoteString(allocator, secret.environmentId),
+                    try quoteString(allocator, secret.id),
+                    try quoteString(allocator, secret.name),
+                },
+            );
+        }
     }
 
     if (had_failure) std.process.exit(1);
@@ -1941,10 +1959,16 @@ fn orgsCreateAction(_: OrgsCreate.Args, opts: OrgsCreate.Options, global: Global
         std.process.exit(1);
     }
     const org = res.value.?;
-    try stdout.print("ok: true\nid: {s}\nname: {s}\n", .{
-        try quoteString(allocator, org.id),
-        try quoteString(allocator, org.name),
-    });
+    // When piped, output just the new org ID for scripting
+    const stdout_is_tty = std.posix.isatty(File.stdout().handle);
+    if (!stdout_is_tty) {
+        try stdout.print("{s}\n", .{org.id});
+    } else {
+        try stdout.print("ok: true\nid: {s}\nname: {s}\n", .{
+            try quoteString(allocator, org.id),
+            try quoteString(allocator, org.name),
+        });
+    }
 }
 
 fn projectsAction(_: Projects.Args, _: Projects.Options, global: Global.Options) !void {
@@ -2003,11 +2027,17 @@ fn projectsCreateAction(_: ProjectsCreate.Args, opts: ProjectsCreate.Options, gl
         std.process.exit(1);
     }
     const project = res.value.?;
-    try stdout.print("ok: true\nid: {s}\nname: {s}\norg_id: {s}\n", .{
-        try quoteString(allocator, project.id),
-        try quoteString(allocator, project.name),
-        try quoteString(allocator, project.orgId),
-    });
+    // When piped, output just the new project ID for scripting
+    const stdout_is_tty = std.posix.isatty(File.stdout().handle);
+    if (!stdout_is_tty) {
+        try stdout.print("{s}\n", .{project.id});
+    } else {
+        try stdout.print("ok: true\nid: {s}\nname: {s}\norg_id: {s}\n", .{
+            try quoteString(allocator, project.id),
+            try quoteString(allocator, project.name),
+            try quoteString(allocator, project.orgId),
+        });
+    }
 }
 
 fn projectsGetAction(args: ProjectsGet.Args, _: ProjectsGet.Options, global: Global.Options) !void {
@@ -2143,12 +2173,18 @@ fn environmentsCreateAction(_: EnvironmentsCreate.Args, opts: EnvironmentsCreate
         std.process.exit(1);
     }
     const environment = res.value.?;
-    try stdout.print("ok: true\nid: {s}\nproject_id: {s}\nname: {s}\nslug: {s}\n", .{
-        try quoteString(allocator, environment.id),
-        try quoteString(allocator, environment.projectId),
-        try quoteString(allocator, environment.name),
-        try quoteString(allocator, environment.slug),
-    });
+    // When piped, output just the new environment ID for scripting
+    const stdout_is_tty = std.posix.isatty(File.stdout().handle);
+    if (!stdout_is_tty) {
+        try stdout.print("{s}\n", .{environment.id});
+    } else {
+        try stdout.print("ok: true\nid: {s}\nproject_id: {s}\nname: {s}\nslug: {s}\n", .{
+            try quoteString(allocator, environment.id),
+            try quoteString(allocator, environment.projectId),
+            try quoteString(allocator, environment.name),
+            try quoteString(allocator, environment.slug),
+        });
+    }
 }
 
 fn environmentsGetAction(args: EnvironmentsGet.Args, _: EnvironmentsGet.Options, global: Global.Options) !void {
