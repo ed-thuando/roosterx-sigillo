@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.12.0
+
+1. **Pipe-friendly output across all commands** — when stdout is piped (not a TTY), commands now output minimal machine-readable text instead of verbose YAML. This makes scripting and piping natural without any extra flags:
+
+   ```bash
+   # list secret names for grep/xargs
+   sigillo secrets | grep DATABASE
+
+   # capture new project ID in a variable
+   PROJECT_ID=$(sigillo projects create --org org_123 --name backend)
+
+   # capture new env ID
+   ENV_ID=$(sigillo environments create -p $PROJECT_ID --name staging --slug staging)
+
+   # set a secret and capture its ID
+   SECRET_ID=$(sigillo secrets set API_KEY my-value -c dev)
+   ```
+
+   Affected commands and their piped output:
+   - `sigillo secrets` — one secret name per line
+   - `sigillo secrets set` — secret ID per environment
+   - `sigillo orgs create` — new org ID
+   - `sigillo projects create` — new project ID
+   - `sigillo environments create` — new environment ID
+
+   TTY output is unchanged (same verbose YAML format as before).
+
+2. **`--raw` flag for `secrets get`** — force raw value output even when stdout is a TTY. When piped, raw mode is enabled automatically so values flow between commands without YAML wrapping:
+
+   ```bash
+   # copy a secret between environments (piped stdout auto-enables raw mode)
+   sigillo secrets get DATABASE_URL -c dev | sigillo secrets set DATABASE_URL -c preview
+
+   # force raw output in a terminal
+   sigillo secrets get DATABASE_URL --raw
+   ```
+
+   Previously, piping `secrets get` would store the full YAML output (with `environment_id`, `name`, `value` fields) as the secret value, corrupting it.
+
 ## 0.11.0
 
 1. **TTY-aware secret redaction with PTY passthrough** — `sigillo run` now uses pseudo-terminals instead of pipes when stdout/stderr are TTYs. Child processes see `isatty()=true`, so tools like `next dev`, `cargo`, and `pytest` keep their colored output, progress bars, and interactive prompts while secrets are still redacted from the output stream:
