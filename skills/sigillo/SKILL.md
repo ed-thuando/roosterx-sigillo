@@ -25,6 +25,19 @@ sigillo --help
 
 **NEVER truncate this either.**
 
+If a flag or command documented here is missing from `--help`, the installed binary is likely outdated. Update before proceeding:
+
+```bash
+npm i -g sigillo@latest
+```
+
+If sigillo is symlinked to a local dev build (check with `which sigillo`), rebuild from source instead:
+
+```bash
+cd /path/to/sigillo/cli && zig build -Dtarget=aarch64-macos
+cp zig-out/bin/sigillo dist/darwin-arm64/sigillo
+```
+
 ## New project setup workflow
 
 This mirrors the Doppler workflow: check auth → link project → list secrets → run.
@@ -88,16 +101,13 @@ To read a specific value:
 sigillo secrets get DATABASE_URL
 ```
 
-When stdout is piped, `secrets get` outputs only the raw value (no YAML wrapping). This makes piping between commands work naturally:
+`secrets get` returns YAML by default. Pass `--raw` to output only the raw value (no YAML wrapping). When stdout is piped, `--raw` is implied automatically:
 
 ```bash
-# copy a secret between environments (raw value flows through stdin)
+# copy a secret between environments (piped stdout auto-enables raw mode)
 sigillo secrets get DATABASE_URL -c dev | sigillo secrets set DATABASE_URL -c preview
-```
 
-Use `--raw` to force raw output even in a terminal (useful for scripting):
-
-```bash
+# force raw output in a terminal (useful for scripting)
 sigillo secrets get DATABASE_URL --raw
 ```
 
@@ -126,11 +136,11 @@ Never read a secret value into the agent context window or pass it as plain text
 **Copying a secret from one env to another:**
 
 ```bash
-# raw value flows through stdin, never seen by the agent
+# piped stdout auto-enables raw mode, value never seen by the agent
 sigillo secrets get DATABASE_URL -c dev | sigillo secrets set DATABASE_URL -c preview
 ```
 
-This works because `secrets get` auto-detects piped stdout and outputs only the raw value (no YAML). The same pattern works for any secret copy, between environments, or when seeding a new environment from an existing one.
+The same pattern works for any secret copy, between environments, or when seeding a new environment from an existing one.
 
 ### Never read `.env` files or `~/.sigillo/*`
 
