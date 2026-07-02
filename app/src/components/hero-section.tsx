@@ -73,7 +73,7 @@ export function HeroSection() {
 
           {/* Login with Google CTA */}
           <a
-            href='/login'
+            href='/login?redirect=/dash'
             className='flex items-center gap-2 mt-7 sm:mt-8 px-4 py-2 bg-primary text-primary-foreground hover:opacity-90 transition-opacity rounded-md font-medium text-xs cursor-pointer no-underline'
           >
             <svg width={18} height={18} viewBox='0 0 24 24' fill='currentColor'>

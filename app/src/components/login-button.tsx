@@ -7,7 +7,7 @@ import { useState } from "react"
 import { Button } from "sigillo-app/src/components/ui/button"
 import { authClient } from "../auth-client.ts"
 
-export function LoginButton({ callbackURL = "/" }: { callbackURL?: string }) {
+export function LoginButton({ callbackURL = "/dash" }: { callbackURL?: string }) {
   const [loading, setLoading] = useState(false)
 
   async function handleSignIn() {

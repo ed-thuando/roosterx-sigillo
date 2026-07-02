@@ -35,7 +35,7 @@ function isTruthy<T>(value: T | null | undefined): value is T {
 // Only allow local app paths for redirects — prevents open redirects and
 // avoids sending logged-in users to API routes or obvious 404s.
 function safeRedirectPath(value: string | null): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/'
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dash'
   if (['/', '/device'].includes(value)) return value
   if (value === '/dash' || value.startsWith('/dash/') || value.startsWith('/invite/')) return value
   return '/'
