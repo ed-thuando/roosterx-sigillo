@@ -19,11 +19,14 @@ import { router } from 'spiceflow/react'
 import {
   getDb, getSession,
   requireOrgMember,
-  getOrgIdForProject, getOrgIdForEnvironment,
+  requireCan,
+  getUserAbility,
+  getOrgIdForProject, getOrgIdForEnvironment, getProjectIdForEnvironment,
   encrypt,
   generateApiToken,
   deriveSecrets,
 } from './db.ts'
+import { subject } from './ability.ts'
 
 async function requireSession() {
   const request = getActionRequest()
@@ -52,7 +55,7 @@ export async function createProjectAction({ name, orgId }: { name: string; orgId
   if (!name) throw new Error('Name is required')
   if (!orgId) throw new Error('No org selected')
   const session = await requireSession()
-  await requireOrgMember(session.userId, orgId)
+  await requireCan(session.userId, orgId, (a) => a.can('manage', 'all'))
   const db = getDb()
   const projectId = ulid()
   const [[proj]] = await db.batch([
@@ -78,7 +81,13 @@ export async function deleteSecretAction({ name, environmentIds }: {
   const orgId = orgIds[0]
   if (!orgId || orgIds.some((id) => !id)) throw new Error('Environment not found')
   if (orgIds.some((id) => id !== orgId)) throw new Error('All environments must belong to the same organization')
-  await requireOrgMember(session.userId, orgId)
+  const ability = await getUserAbility(session.userId, orgId)
+  for (const envId of unique) {
+    const projectId = await getProjectIdForEnvironment(envId)
+    if (!projectId || !ability.can('Delete', subject('Secret', { projectId, environmentId: envId }))) {
+      throw new Error('FORBIDDEN')
+    }
+  }
   const db = getDb()
   const queries: BatchItem<'sqlite'>[] = unique.map((envId) =>
     db.insert(schema.secretEvent).values({
@@ -101,7 +110,11 @@ export async function saveSecretsAction({ edits, environmentIds }: {
   const currentEnvId = environmentIds[0]!
   const orgId = await getOrgIdForEnvironment(currentEnvId)
   if (!orgId) throw new Error('Environment not found')
-  await requireOrgMember(session.userId, orgId)
+  const ability = await getUserAbility(session.userId, orgId)
+  const currentProjectId = await getProjectIdForEnvironment(currentEnvId)
+  if (!currentProjectId || !ability.can('Edit', subject('Secret', { projectId: currentProjectId, environmentId: currentEnvId }))) {
+    throw new Error('FORBIDDEN')
+  }
 
   const db = getDb()
 
@@ -137,6 +150,8 @@ export async function saveSecretsAction({ edits, environmentIds }: {
   for (const envId of otherEnvIds) {
     const targetOrgId = await getOrgIdForEnvironment(envId)
     if (targetOrgId !== orgId) continue
+    const targetProjectId = await getProjectIdForEnvironment(envId)
+    if (!targetProjectId || !ability.can('Edit', subject('Secret', { projectId: targetProjectId, environmentId: envId }))) continue
     for (const edit of editsWithEncrypted) {
       queries.push(db.insert(schema.secretEvent).values({
         environmentId: envId, name: edit.name,
@@ -156,7 +171,8 @@ export async function deleteEnvAction({ id }: { id: string }) {
   const session = await requireSession()
   const orgId = await getOrgIdForEnvironment(id)
   if (!orgId) throw new Error('Environment not found')
-  await requireOrgMember(session.userId, orgId)
+  const projectId = await getProjectIdForEnvironment(id)
+  await requireCan(session.userId, orgId, (a) => a.can('Delete', subject('Environment', { projectId: projectId! })))
   const db = getDb()
   await db.delete(schema.environment).where(orm.eq(schema.environment.id, id))
 }
@@ -170,7 +186,7 @@ export async function createEnvAction({ name, slug, projectId }: {
   const session = await requireSession()
   const orgId = await getOrgIdForProject(projectId)
   if (!orgId) throw new Error('Project not found')
-  await requireOrgMember(session.userId, orgId)
+  await requireCan(session.userId, orgId, (a) => a.can('Create', subject('Environment', { projectId })))
   const db = getDb()
   await db.insert(schema.environment).values({ projectId, name, slug })
   return { name }
@@ -185,7 +201,8 @@ export async function renameEnvAction({ id, name, slug }: {
   const session = await requireSession()
   const orgId = await getOrgIdForEnvironment(id)
   if (!orgId) throw new Error('Environment not found')
-  await requireOrgMember(session.userId, orgId)
+  const projectId = await getProjectIdForEnvironment(id)
+  await requireCan(session.userId, orgId, (a) => a.can('Edit', subject('Environment', { projectId: projectId! })))
   const db = getDb()
   const updates: Partial<{ name: string; slug: string; updatedAt: number }> = { updatedAt: Date.now() }
   if (name) updates.name = name
@@ -280,17 +297,18 @@ export async function removeOrgMemberAction({ memberId }: { memberId: string }) 
 
 // ── API Token actions ───────────────────────────────────────────────
 
-export async function createTokenAction({ name, projectId, environmentId }: {
+export async function createTokenAction({ name, projectId, environmentId, readOnly }: {
   name: string
   projectId: string
   environmentId?: string | null
+  readOnly?: boolean
 }) {
   if (!name) throw new Error('Name is required')
   if (!projectId) throw new Error('Project is required')
   const session = await requireSession()
   const orgId = await getOrgIdForProject(projectId)
   if (!orgId) throw new Error('Project not found')
-  await requireOrgMember(session.userId, orgId)
+  await requireCan(session.userId, orgId, (a) => a.can('Create', subject('ApiToken', { projectId })))
 
   // If environmentId is provided, verify it belongs to this project
   if (environmentId) {
@@ -308,6 +326,7 @@ export async function createTokenAction({ name, projectId, environmentId }: {
     name,
     projectId,
     environmentId: environmentId || null,
+    capability: readOnly ? 'read-only' : 'read-write',
     prefix,
     hashedKey,
     createdBy: session.userId,
@@ -328,7 +347,7 @@ export async function deleteTokenAction({ tokenId }: { tokenId: string }) {
   if (!token) throw new Error('Token not found')
   const orgId = await getOrgIdForProject(token.projectId)
   if (!orgId) throw new Error('Project not found')
-  await requireOrgMember(session.userId, orgId)
+  await requireCan(session.userId, orgId, (a) => a.can('Delete', subject('ApiToken', { projectId: token.projectId })))
   await db.delete(schema.apiToken).where(orm.eq(schema.apiToken.id, tokenId))
 }
 
@@ -350,7 +369,15 @@ export async function syncMissingSecretsAction({
   const targetOrgId = await getOrgIdForEnvironment(targetEnvironmentId)
   if (!sourceOrgId || !targetOrgId) throw new Error('Environment not found')
   if (sourceOrgId !== targetOrgId) throw new Error('Environments must belong to the same organization')
-  await requireOrgMember(session.userId, targetOrgId)
+  const ability = await getUserAbility(session.userId, targetOrgId)
+  const sourceProjectId = await getProjectIdForEnvironment(sourceEnvironmentId)
+  const targetProjectId = await getProjectIdForEnvironment(targetEnvironmentId)
+  if (!sourceProjectId || !ability.can('ReadValue', subject('Secret', { projectId: sourceProjectId, environmentId: sourceEnvironmentId }))) {
+    throw new Error('FORBIDDEN')
+  }
+  if (!targetProjectId || !ability.can('Edit', subject('Secret', { projectId: targetProjectId, environmentId: targetEnvironmentId }))) {
+    throw new Error('FORBIDDEN')
+  }
 
   // Re-derive both sides server-side so we never overwrite a key that was
   // added to the target after the client loaded (stale tab race condition).

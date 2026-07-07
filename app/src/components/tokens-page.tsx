@@ -132,7 +132,7 @@ function TokensTable() {
   )
 }
 
-const tokenSchema = z.object({ name: z.string().min(1, "Name is required"), environmentId: z.string().optional() })
+const tokenSchema = z.object({ name: z.string().min(1, "Name is required"), environmentId: z.string().optional(), readOnly: z.string().optional() })
 const tokenFields = tokenSchema.keyof().enum
 
 function CreateTokenDialog({
@@ -224,7 +224,7 @@ function CreateTokenDialog({
         <form
           className="px-6 pb-2"
           action={async (formData: FormData) => {
-            const { name, environmentId } = parseFormData(tokenSchema, formData)
+            const { name, environmentId, readOnly } = parseFormData(tokenSchema, formData)
             setCreating(true)
             setError(null)
             try {
@@ -232,6 +232,7 @@ function CreateTokenDialog({
                 name: name.trim(),
                 projectId,
                 environmentId: environmentId || null,
+                readOnly: readOnly === "on",
               })
               setCreatedKey(result.key)
             } catch (e: any) {
@@ -266,6 +267,12 @@ function CreateTokenDialog({
                   <option key={env.id} value={env.id}>{env.name}</option>
                 ))}
               </NativeSelect>
+            </div>
+            <div className="flex items-center gap-2">
+              <input id="token-readonly" name={tokenFields.readOnly} type="checkbox" className="size-4" />
+              <label htmlFor="token-readonly" className="text-sm">
+                Read-only (can read secret values but not create, edit, or delete)
+              </label>
             </div>
           </div>
           <DialogFooter variant="bare" className="mt-4">

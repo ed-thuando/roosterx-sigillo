@@ -174,6 +174,9 @@ export const apiToken = sqliteCore.sqliteTable('api_token', {
   projectId: sqliteCore.text('project_id').notNull().references(() => project.id, { onDelete: 'cascade' }),
   // Optional: restrict to a single environment. Null = all envs in the project.
   environmentId: sqliteCore.text('environment_id').references(() => environment.id, { onDelete: 'set null' }),
+  // Access capability. "read-only" tokens can list/read secret values but cannot
+  // create/edit/delete. "read-write" (default) is the legacy behavior.
+  capability: sqliteCore.text('capability', { enum: ['read-only', 'read-write'] }).notNull().default('read-write'),
   // First 12 chars after the "sig_" prefix, for display (e.g. "sig_a1b2c3d4e5f6...")
   prefix: sqliteCore.text('prefix').notNull(),
   // SHA-256 hex digest of the full key — used for verification lookups
@@ -183,6 +186,30 @@ export const apiToken = sqliteCore.sqliteTable('api_token', {
 }, (table) => [
   sqliteCore.index('api_token_project_id_idx').on(table.projectId),
   sqliteCore.index('api_token_hashed_key_idx').on(table.hashedKey),
+])
+
+// ── Project membership / access grants ──────────────────────────────
+// Fine-grained access layer on top of org membership. Each row assigns a role
+// to a user within one project. environmentId = null grants the role across the
+// whole project; environmentId set scopes the role to that single environment.
+// Org admins have full access and need no row here.
+//
+// Note: SQLite treats NULL as distinct in unique indexes, so the uniqueness
+// constraint does NOT prevent two whole-project (environmentId = null) rows for
+// the same user — the app upserts by (projectId, userId, environmentId) to
+// enforce a single grant per scope.
+export const projectMember = sqliteCore.sqliteTable('project_member', {
+  id: sqliteCore.text('id').primaryKey().notNull().$defaultFn(() => ulid()),
+  projectId: sqliteCore.text('project_id').notNull().references(() => project.id, { onDelete: 'cascade' }),
+  userId: sqliteCore.text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  // Null = whole project; set = scoped to this environment only.
+  environmentId: sqliteCore.text('environment_id').references(() => environment.id, { onDelete: 'cascade' }),
+  role: sqliteCore.text('role', { enum: ['admin', 'member', 'viewer'] }).notNull(),
+  createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
+}, (table) => [
+  sqliteCore.index('project_member_project_id_idx').on(table.projectId),
+  sqliteCore.index('project_member_user_id_idx').on(table.userId),
+  sqliteCore.uniqueIndex('project_member_project_user_env_unique').on(table.projectId, table.userId, table.environmentId),
 ])
 
 // Default environments created for every new project
@@ -224,7 +251,7 @@ export const deviceCode = sqliteCore.sqliteTable('device_code', {
 // ── Relations (v2 API) ──────────────────────────────────────────────
 
 export const relations = defineRelations(
-  { user, session, account, verification, org, orgMember, orgInvitation, project, environment, secretEvent, apiToken, deviceCode, oauthDomain },
+  { user, session, account, verification, org, orgMember, orgInvitation, project, projectMember, environment, secretEvent, apiToken, deviceCode, oauthDomain },
   (r) => ({
     user: {
       sessions: r.many.session(),
@@ -262,6 +289,12 @@ export const relations = defineRelations(
       org: r.one.org({ from: r.project.orgId, to: r.org.id }),
       environments: r.many.environment(),
       apiTokens: r.many.apiToken(),
+      members: r.many.projectMember(),
+    },
+    projectMember: {
+      project: r.one.project({ from: r.projectMember.projectId, to: r.project.id }),
+      user: r.one.user({ from: r.projectMember.userId, to: r.user.id }),
+      environment: r.one.environment({ from: r.projectMember.environmentId, to: r.environment.id }),
     },
     environment: {
       project: r.one.project({ from: r.environment.projectId, to: r.project.id }),

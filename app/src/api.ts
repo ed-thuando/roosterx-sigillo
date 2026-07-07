@@ -17,6 +17,8 @@ import {
   getDataCenter,
   requireApiSession,
   requireApiOrgMember,
+  requireApiCan,
+  requireApiOrgAdmin,
   requireSecretsApiAuth,
   getOrgIdForProject,
   getOrgIdForEnvironment,
@@ -27,6 +29,7 @@ import {
   encrypt,
   decrypt,
 } from './db.ts'
+import { subject } from './ability.ts'
 
 const userSelectSchema = createSelectSchema(schema.user)
 const orgSelectSchema = createSelectSchema(schema.org)
@@ -351,7 +354,7 @@ export const apiApp = new Spiceflow()
     async handler({ request }) {
       const body = await request.json()
       const session = await requireApiSession(request)
-      await requireApiOrgMember(session.userId, body.orgId)
+      await requireApiOrgAdmin(session.userId, body.orgId)
       const db = getDb()
       const projectId = ulid()
       const [[proj]] = await db.batch([
@@ -463,7 +466,7 @@ export const apiApp = new Spiceflow()
       const session = await requireApiSession(request)
       const orgId = await getOrgIdForProject(params.id)
       if (!orgId) return json({ error: 'not found' }, { status: 404 })
-      await requireApiOrgMember(session.userId, orgId)
+      await requireApiCan(session.userId, orgId, (a) => a.can('Edit', subject('Project', { id: params.id })))
       const db = getDb()
       const [updated] = await db.update(schema.project)
         .set({ name: body.name, updatedAt: Date.now() })
@@ -483,7 +486,7 @@ export const apiApp = new Spiceflow()
       const session = await requireApiSession(request)
       const orgId = await getOrgIdForProject(params.id)
       if (!orgId) return json({ error: 'not found' }, { status: 404 })
-      await requireApiOrgMember(session.userId, orgId)
+      await requireApiCan(session.userId, orgId, (a) => a.can('Delete', subject('Project', { id: params.id })))
       const db = getDb()
       const [deleted] = await db.delete(schema.project).where(orm.eq(schema.project.id, params.id)).returning({ id: schema.project.id })
       if (!deleted) return json({ error: 'not found' }, { status: 404 })
@@ -526,7 +529,7 @@ export const apiApp = new Spiceflow()
       const session = await requireApiSession(request)
       const orgId = await getOrgIdForProject(params.projectId)
       if (!orgId) return json({ error: 'not found' }, { status: 404 })
-      await requireApiOrgMember(session.userId, orgId)
+      await requireApiCan(session.userId, orgId, (a) => a.can('Create', subject('Environment', { projectId: params.projectId })))
       const db = getDb()
       const [row] = await db.insert(schema.environment).values({ projectId: params.projectId, name: body.name, slug: body.slug })
         .returning({ id: schema.environment.id, projectId: schema.environment.projectId, name: schema.environment.name, slug: schema.environment.slug })
@@ -567,8 +570,8 @@ export const apiApp = new Spiceflow()
       const environment = await resolveEnvironment(params.id, params.projectId)
       const orgId = environment?.orgId ?? null
       if (!orgId) return json({ error: 'not found' }, { status: 404 })
-      await requireApiOrgMember(session.userId, orgId)
       if (!environment) return json({ error: 'not found' }, { status: 404 })
+      await requireApiCan(session.userId, orgId, (a) => a.can('Delete', subject('Environment', { projectId: environment.projectId })))
       const db = getDb()
       const [deleted] = await db.delete(schema.environment).where(orm.eq(schema.environment.id, environment.id)).returning({ id: schema.environment.id })
       if (!deleted) return json({ error: 'not found' }, { status: 404 })
@@ -591,8 +594,8 @@ export const apiApp = new Spiceflow()
       const environment = await resolveEnvironment(params.id, params.projectId)
       const orgId = environment?.orgId ?? null
       if (!orgId) return json({ error: 'not found' }, { status: 404 })
-      await requireApiOrgMember(session.userId, orgId)
       if (!environment) return json({ error: 'not found' }, { status: 404 })
+      await requireApiCan(session.userId, orgId, (a) => a.can('Edit', subject('Environment', { projectId: environment.projectId })))
       const db = getDb()
       const updates: Partial<{ name: string; slug: string; updatedAt: number }> = { updatedAt: Date.now() }
       if (body.name) updates.name = body.name
@@ -613,7 +616,7 @@ export const apiApp = new Spiceflow()
     detail: { tags: ['Secrets'], summary: 'List secrets' },
     response: secretListResponseSchema,
     async handler({ params, request }): Promise<any> {
-      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
+      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId, action: 'DescribeSecret' })
       const db = getDb()
 
       // Derive projectId from the authenticated environment, not the URL param,
@@ -651,7 +654,7 @@ export const apiApp = new Spiceflow()
     response: secretMutationResponseSchema,
     async handler({ request, params }) {
       const body = await request.json()
-      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
+      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId, action: 'Create' })
       const db = getDb()
       const { encrypted, iv } = await encrypt(body.value)
       const [row] = await db.insert(schema.secretEvent).values({
@@ -669,7 +672,7 @@ export const apiApp = new Spiceflow()
     detail: { tags: ['Secrets'], summary: 'Get secret value' },
     response: { 200: secretValueResponseSchema, 404: errorResponseSchema },
     async handler({ params, request }) {
-      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
+      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId, action: 'ReadValue' })
       const derived = await deriveSecrets(auth.environmentId)
       const secret = derived.find((d) => d.name === params.name)
       if (!secret) return json({ error: 'not found' }, { status: 404 })
@@ -684,7 +687,7 @@ export const apiApp = new Spiceflow()
     detail: { tags: ['Secrets'], summary: 'Delete secret' },
     response: secretDeleteResponseSchema,
     async handler({ params, request }) {
-      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
+      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId, action: 'Delete' })
       const db = getDb()
       await db.insert(schema.secretEvent).values({
         environmentId: auth.environmentId, name: params.name,
@@ -704,7 +707,7 @@ export const apiApp = new Spiceflow()
     detail: { tags: ['Secrets'], summary: 'Download secrets' },
     query: z.object({ format: downloadedSecretsFormatSchema.optional() }),
     async handler({ params, request, query }) {
-      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
+      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId, action: 'ReadValue' })
 
       const format = query.format || 'json'
 
@@ -732,7 +735,7 @@ export const apiApp = new Spiceflow()
     response: bulkSecretsResponseSchema,
     async handler({ request, params }) {
       const body = await request.json()
-      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId })
+      const auth = await requireSecretsApiAuth({ request, environmentRef: params.environmentId, projectId: params.projectId, action: 'Edit' })
       const db = getDb()
 
       const entries = Object.entries(body.secrets)
