@@ -14,8 +14,10 @@
 import { describe, test, expect, beforeAll } from 'vitest'
 import { createSpiceflowFetch } from 'spiceflow/client'
 import { app } from './app.js'
-import { getAuth, encrypt, decrypt, deriveSecrets, deriveEnvironmentSecretsAndNames, generateApiToken, getDb } from './db.js'
+import { getAuth, encrypt, decrypt, deriveSecrets, deriveEnvironmentSecretsAndNames, generateApiToken, getDb, getUserAbility } from './db.js'
+import { subject } from './ability.ts'
 import { schema } from 'db'
+import { sql } from 'drizzle-orm'
 
 // ── Test helpers ────────────────────────────────────────────────────
 
@@ -523,6 +525,35 @@ describe('api tokens', () => {
     assertErrorStatus(prodResult, 403)
   })
 
+  test('read-only token can read values but cannot write', async () => {
+    const db = getDb()
+    const user = await createTestUser({ name: 'ReadOnlyTokenUser' })
+    const { key, hashedKey, prefix } = await generateApiToken()
+    await db.insert(schema.apiToken).values({
+      name: 'ro-token',
+      projectId,
+      capability: 'read-only',
+      prefix,
+      hashedKey,
+      createdBy: user.user.id,
+    })
+    const ro = authedFetch(key)
+
+    // read: allowed
+    const got = assertOk(await ro('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      params: { pid: projectId, eid: devEnvId, name: 'TOKEN_TEST' },
+    }))
+    expect(got.value).toBe('secret-value')
+
+    // write: forbidden
+    assertErrorStatus(await ro('/api/v0/projects/:pid/environments/:eid/secrets', {
+      method: 'POST', params: { pid: projectId, eid: devEnvId }, body: { name: 'NOPE', value: 'x' },
+    }), 403)
+    assertErrorStatus(await ro('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      method: 'DELETE', params: { pid: projectId, eid: devEnvId, name: 'TOKEN_TEST' },
+    }), 403)
+  })
+
   test('invalid token returns 401', async () => {
     const badFetch = authedFetch('sig_invalid_token_that_does_not_exist')
     const result = await badFetch('/api/v0/projects/:pid/environments/:eid/secrets', {
@@ -628,6 +659,122 @@ describe('security — cross-user isolation', () => {
   test('user B cannot delete user A environment (403)', async () => {
     const res = await req(`/api/v0/projects/${userAProjectId}/environments/${userAEnvId}`, userBToken, 'DELETE')
     expect(res.status).toBe(403)
+  })
+})
+
+// ── RBAC — scoped project grants (CASL) ─────────────────────────────
+// Verifies fine-grained access: a user's permissions come from their
+// project_member rows (viewer=read-only, member=read/write) scoped to a
+// project or a single environment. Org members with NO project grant get no
+// access — the intended post-RBAC behavior.
+
+describe('RBAC — scoped project grants', () => {
+  let ownerFetch: ReturnType<typeof authedFetch>
+  let orgId: string
+  let projectId: string
+  let devEnvId: string
+  let prodEnvId: string
+
+  // Seed an org member row + optional project grant for a fresh user, return
+  // an authed fetch client for them.
+  async function makeScopedUser(
+    name: string,
+    grant: { role: 'admin' | 'member' | 'viewer'; environmentId?: string } | null,
+  ) {
+    const db = getDb()
+    const u = await createTestUser({ name })
+    await db.insert(schema.orgMember).values({ orgId, userId: u.user.id, role: 'member' })
+    if (grant) {
+      await db.insert(schema.projectMember).values({
+        projectId,
+        userId: u.user.id,
+        environmentId: grant.environmentId ?? null,
+        role: grant.role,
+      })
+    }
+    return authedFetch(u.token)
+  }
+
+  beforeAll(async () => {
+    const owner = await createTestUser({ name: 'RbacOwner' })
+    ownerFetch = authedFetch(owner.token)
+    const org = assertOk(await ownerFetch('/api/v0/orgs', { method: 'POST', body: { name: 'Rbac Org' } }))
+    orgId = org.id
+    const proj = assertOk(await ownerFetch('/api/v0/projects', { method: 'POST', body: { name: 'Rbac Project', orgId } }))
+    projectId = proj.id
+    const envs = assertOk(await ownerFetch('/api/v0/projects/:pid/environments', { params: { pid: projectId } }))
+    devEnvId = envs.environments.find((e) => e.slug === 'dev')!.id
+    prodEnvId = envs.environments.find((e) => e.slug === 'prod')!.id
+    // Seed a secret in both envs
+    for (const eid of [devEnvId, prodEnvId]) {
+      await ownerFetch('/api/v0/projects/:pid/environments/:eid/secrets', {
+        method: 'POST', params: { pid: projectId, eid },
+        body: { name: 'SHARED', value: `val-${eid}` },
+      })
+    }
+  })
+
+  test('viewer can read secret values but cannot write', async () => {
+    const viewer = await makeScopedUser('RbacViewer', { role: 'viewer' })
+    const got = assertOk(await viewer('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      params: { pid: projectId, eid: devEnvId, name: 'SHARED' },
+    }))
+    expect(got.value).toBe(`val-${devEnvId}`)
+
+    assertErrorStatus(await viewer('/api/v0/projects/:pid/environments/:eid/secrets', {
+      method: 'POST', params: { pid: projectId, eid: devEnvId }, body: { name: 'X', value: 'y' },
+    }), 403)
+    assertErrorStatus(await viewer('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      method: 'DELETE', params: { pid: projectId, eid: devEnvId, name: 'SHARED' },
+    }), 403)
+  })
+
+  test('member can read and write secrets', async () => {
+    const member = await makeScopedUser('RbacMember', { role: 'member' })
+    assertOk(await member('/api/v0/projects/:pid/environments/:eid/secrets', {
+      method: 'POST', params: { pid: projectId, eid: devEnvId }, body: { name: 'BY_MEMBER', value: 'ok' },
+    }))
+    const got = assertOk(await member('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      params: { pid: projectId, eid: devEnvId, name: 'BY_MEMBER' },
+    }))
+    expect(got.value).toBe('ok')
+  })
+
+  test('environment-scoped grant limits access to that environment', async () => {
+    const prodOnly = await makeScopedUser('RbacProdOnly', { role: 'viewer', environmentId: prodEnvId })
+    // prod: allowed
+    assertOk(await prodOnly('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      params: { pid: projectId, eid: prodEnvId, name: 'SHARED' },
+    }))
+    // dev: forbidden
+    assertErrorStatus(await prodOnly('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      params: { pid: projectId, eid: devEnvId, name: 'SHARED' },
+    }), 403)
+  })
+
+  test('org member with no project grant has no secret access', async () => {
+    const noGrant = await makeScopedUser('RbacNoGrant', null)
+    assertErrorStatus(await noGrant('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      params: { pid: projectId, eid: devEnvId, name: 'SHARED' },
+    }), 403)
+  })
+
+  test('project-member cannot manage environments or delete the project', async () => {
+    const member = await makeScopedUser('RbacMemberMgmt', { role: 'member' })
+    assertErrorStatus(await member('/api/v0/projects/:pid/environments', {
+      method: 'POST', params: { pid: projectId }, body: { name: 'Nope', slug: 'nope' },
+    }), 403)
+    assertErrorStatus(await member('/api/v0/projects/:id', {
+      method: 'DELETE', params: { id: projectId },
+    }), 403)
+  })
+
+  test('project-admin can manage environments', async () => {
+    const admin = await makeScopedUser('RbacProjAdmin', { role: 'admin' })
+    const created = assertOk(await admin('/api/v0/projects/:pid/environments', {
+      method: 'POST', params: { pid: projectId }, body: { name: 'AdminEnv', slug: 'adminenv' },
+    }))
+    expect(created.ok).toBe(true)
   })
 })
 
@@ -797,6 +944,78 @@ describe('secrets list — isEmpty and allNames', () => {
     // PROD_ONLY should NOT be in the secrets array (it's only in prod)
     const prodOnly = result.secrets.find((s) => s.name === 'PROD_ONLY')
     expect(prodOnly).toBeUndefined()
+  })
+})
+
+// ── Migration parity — backfill preserves pre-RBAC access ───────────
+// Verifies the 0003 backfill: every org member (role='member') gets exactly
+// one whole-project 'member' grant per project in the org; admins are excluded
+// (they keep implicit full access). Runs the migration's own SELECT/INSERT,
+// scoped to a fresh org so it can't touch other test data.
+
+describe('migration parity — projectMember backfill', () => {
+  let orgId: string
+  let projectIds: string[]
+  let memberId: string
+  let member2Id: string
+  let adminId: string
+
+  beforeAll(async () => {
+    const db = getDb()
+    const member = await createTestUser({ name: 'MigMember' })
+    const member2 = await createTestUser({ name: 'MigMember2' })
+    const admin = await createTestUser({ name: 'MigAdmin' })
+    memberId = member.user.id
+    member2Id = member2.user.id
+    adminId = admin.user.id
+
+    const [org] = await db.insert(schema.org).values({ name: 'Migration Org' }).returning({ id: schema.org.id })
+    orgId = org!.id
+    await db.insert(schema.orgMember).values([
+      { orgId, userId: memberId, role: 'member' },
+      { orgId, userId: member2Id, role: 'member' },
+      { orgId, userId: adminId, role: 'admin' },
+    ])
+    const projs = await db.insert(schema.project).values([
+      { name: 'Mig Project A', orgId },
+      { name: 'Mig Project B', orgId },
+    ]).returning({ id: schema.project.id })
+    projectIds = projs.map((p) => p.id)
+
+    // Run the migration's backfill, scoped to this org so it is isolated.
+    await db.run(sql`
+      INSERT INTO project_member (id, project_id, user_id, environment_id, role, created_at)
+      SELECT lower(hex(randomblob(16))), p.id, om.user_id, NULL, 'member', unixepoch() * 1000
+      FROM org_member om
+      JOIN project p ON p.org_id = om.org_id
+      WHERE om.role = 'member' AND om.org_id = ${orgId}
+    `)
+  })
+
+  test('creates one member grant per (member, project), excluding admins', async () => {
+    const db = getDb()
+    const rows = await db.query.projectMember.findMany({ where: { projectId: { in: projectIds } } })
+    // 2 members × 2 projects = 4 rows; admin excluded
+    expect(rows.length).toBe(4)
+    expect(rows.every((r) => r.role === 'member')).toBe(true)
+    expect(rows.every((r) => r.environmentId === null)).toBe(true)
+    expect(rows.some((r) => r.userId === adminId)).toBe(false)
+    expect(new Set(rows.map((r) => r.userId))).toEqual(new Set([memberId, member2Id]))
+  })
+
+  test('backfilled member has pre-RBAC read/write access to org projects', async () => {
+    const ability = await getUserAbility(memberId, orgId)
+    for (const pid of projectIds) {
+      // whole-project member grant matches any environment
+      expect(ability.can('ReadValue', subject('Secret', { projectId: pid, environmentId: 'any' }))).toBe(true)
+      expect(ability.can('Create', subject('Secret', { projectId: pid, environmentId: 'any' }))).toBe(true)
+    }
+  })
+
+  test('admin keeps full access without any project grant row', async () => {
+    const ability = await getUserAbility(adminId, orgId)
+    expect(ability.can('Delete', subject('Secret', { projectId: projectIds[0]!, environmentId: 'any' }))).toBe(true)
+    expect(ability.can('manage', 'all')).toBe(true)
   })
 })
 

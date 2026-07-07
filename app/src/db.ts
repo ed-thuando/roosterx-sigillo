@@ -15,6 +15,7 @@ import { genericOAuth, deviceAuthorization, bearer } from 'better-auth/plugins'
 import { drizzleAdapter } from 'better-auth-drizzle-adapter'
 import { redirect } from 'spiceflow'
 import { memoize } from './lib/memoize.ts'
+import { buildAbility, grantsFromMembership, tokenGrant, subject, type AppAbility, type SecretAction } from './ability.ts'
 
 // ── Drizzle client via D1 ───────────────────────────────────────────
 export { getDb }
@@ -384,6 +385,77 @@ export async function getProjectIdForEnvironment(environmentId: string, projectI
   return env?.projectId ?? null
 }
 
+// ── CASL ability loaders ────────────────────────────────────────────
+// Compile a user's or token's effective permissions into a CASL ability that
+// call sites query with ability.can(action, subject(Type, { ... })).
+
+// Project-member rows for a user, filtered to the given org's projects.
+const lookupProjectGrants = memoize({
+  namespace: 'project-grants',
+  fn: async (
+    userId: string,
+    orgId: string,
+  ): Promise<{ role: 'admin' | 'member' | 'viewer'; projectId: string; environmentId: string | null }[]> => {
+    const db = getDb()
+    const rows = await db.query.projectMember.findMany({
+      where: { userId },
+      columns: { role: true, projectId: true, environmentId: true },
+      with: { project: { columns: { orgId: true } } },
+    })
+    return rows
+      .filter((r) => r.project?.orgId === orgId)
+      .map((r) => ({ role: r.role, projectId: r.projectId, environmentId: r.environmentId }))
+  },
+})
+
+// Build the ability for a user within one org. Org admins get full access;
+// everyone else gets exactly what their project_member rows grant. A non-member
+// (or member with no project rows) gets an empty ability (no access).
+export async function getUserAbility(userId: string, orgId: string): Promise<AppAbility> {
+  const member = await lookupOrgMember(userId, orgId)
+  if (!member) return buildAbility([])
+  const orgRole = member.role === 'admin' ? 'admin' : 'member'
+  const projectRows = orgRole === 'admin' ? [] : await lookupProjectGrants(userId, orgId)
+  return buildAbility(grantsFromMembership(orgRole, projectRows))
+}
+
+// Ability-based authorization checks. `check` receives the user's compiled
+// ability and returns whether the action is allowed. The Api* variant throws a
+// 403 Response (REST routes); the plain variant throws Error('FORBIDDEN')
+// (server actions), matching the existing requireOrgMember behavior.
+export async function requireApiCan(
+  userId: string,
+  orgId: string,
+  check: (ability: AppAbility) => boolean,
+): Promise<void> {
+  const ability = await getUserAbility(userId, orgId)
+  if (!check(ability)) throw forbiddenResponse()
+}
+
+export async function requireCan(
+  userId: string,
+  orgId: string,
+  check: (ability: AppAbility) => boolean,
+): Promise<void> {
+  const ability = await getUserAbility(userId, orgId)
+  if (!check(ability)) throw new Error('FORBIDDEN')
+}
+
+// Org-admin only — for administration not tied to an existing project scope
+// (creating projects, org settings). org-admin ⇒ `manage all`.
+export async function requireApiOrgAdmin(userId: string, orgId: string): Promise<void> {
+  await requireApiCan(userId, orgId, (a) => a.can('manage', 'all'))
+}
+
+// Build the ability for an API token from its capability + scope.
+export function getTokenAbility(token: {
+  capability: 'read-only' | 'read-write'
+  projectId: string
+  environmentId: string | null
+}): AppAbility {
+  return buildAbility([tokenGrant(token.capability, token.projectId, token.environmentId)])
+}
+
 // ── Derive current secrets from event log ───────────────────────────
 // Replays the append-only secretEvent log for an environment and returns
 // the current state: last "set" event per name wins, "delete" removes it.
@@ -536,10 +608,15 @@ export async function requireSecretsApiAuth(
     request,
     environmentRef,
     projectId,
+    action,
   }: {
     request: Request
     environmentRef: string
     projectId?: string | null
+    // The Secret action this route requires (verb → action mapping lives at the
+    // call site). Access is granted only if the actor's ability permits it on
+    // the resolved (projectId, environmentId).
+    action: SecretAction
   },
 ): Promise<SecretsAuth & { environmentId: string }> {
   const authHeader = request.headers.get('authorization')
@@ -552,7 +629,7 @@ export async function requireSecretsApiAuth(
     const db = getDb()
     const token = await db.query.apiToken.findFirst({
       where: { hashedKey },
-      columns: { id: true, projectId: true, environmentId: true },
+      columns: { id: true, projectId: true, environmentId: true, capability: true },
     })
     if (!token) throw unauthorizedResponse()
 
@@ -565,6 +642,11 @@ export async function requireSecretsApiAuth(
       throw forbiddenResponse('token is scoped to a different environment')
     }
 
+    const ability = getTokenAbility(token)
+    if (!ability.can(action, subject('Secret', { projectId: token.projectId, environmentId: env.id }))) {
+      throw forbiddenResponse('token capability does not allow this action')
+    }
+
     return { userId: null, apiTokenId: token.id, environmentId: env.id }
   }
 
@@ -575,9 +657,8 @@ export async function requireSecretsApiAuth(
   const env = await resolveEnvironment(environmentRef, projectId)
   if (!env?.orgId) throw new Response(JSON.stringify({ error: 'not found' }), { status: 404, headers: { 'content-type': 'application/json' } })
 
-  try {
-    await requireOrgMember(session.userId, env.orgId)
-  } catch {
+  const ability = await getUserAbility(session.userId, env.orgId)
+  if (!ability.can(action, subject('Secret', { projectId: env.projectId, environmentId: env.id }))) {
     throw forbiddenResponse()
   }
 

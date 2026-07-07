@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@ascii-kit/font": "^0.0.6",
+    "@casl/ability": "^6.7.3",
     "@ascii-kit/fonts-flf": "^0.0.6",
     "@base-ui/react": "^1.4.0",
     "@holocron.so/vite": "^0.23.0",
