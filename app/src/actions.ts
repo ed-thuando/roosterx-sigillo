@@ -295,6 +295,85 @@ export async function removeOrgMemberAction({ memberId }: { memberId: string }) 
   return { id: member.id }
 }
 
+// ── Project member (access grant) actions ───────────────────────────
+// Manage per-project / per-environment role grants. Authorized via the
+// ProjectMember subject (org-admin or project-admin). environmentId=null grants
+// the role across the whole project; set = scoped to that one environment.
+
+export async function addProjectMemberAction({ projectId, userId, environmentId, role }: {
+  projectId: string
+  userId: string
+  environmentId?: string | null
+  role: 'admin' | 'member' | 'viewer'
+}) {
+  if (!projectId || !userId) throw new Error('Project and user are required')
+  const session = await requireSession()
+  const orgId = await getOrgIdForProject(projectId)
+  if (!orgId) throw new Error('Project not found')
+  await requireCan(session.userId, orgId, (a) => a.can('Create', subject('ProjectMember', { projectId })))
+  const db = getDb()
+
+  // The target user must belong to the org.
+  const orgMembership = await db.query.orgMember.findFirst({
+    where: { orgId, userId }, columns: { id: true },
+  })
+  if (!orgMembership) throw new Error('User is not a member of this organization')
+
+  // If env-scoped, the environment must belong to this project.
+  if (environmentId) {
+    const env = await db.query.environment.findFirst({
+      where: { id: environmentId, projectId }, columns: { id: true },
+    })
+    if (!env) throw new Error('Environment not found in this project')
+  }
+
+  // Upsert by (projectId, userId, environmentId) — one grant per scope.
+  const existingRows = await db.query.projectMember.findMany({
+    where: { projectId, userId },
+    columns: { id: true, environmentId: true },
+  })
+  const existing = existingRows.find((r) => r.environmentId === (environmentId ?? null))
+  if (existing) {
+    await db.update(schema.projectMember).set({ role }).where(orm.eq(schema.projectMember.id, existing.id))
+    return { id: existing.id }
+  }
+  const [row] = await db.insert(schema.projectMember)
+    .values({ projectId, userId, environmentId: environmentId || null, role })
+    .returning({ id: schema.projectMember.id })
+  return { id: row!.id }
+}
+
+export async function updateProjectMemberRoleAction({ memberId, role }: {
+  memberId: string
+  role: 'admin' | 'member' | 'viewer'
+}) {
+  const session = await requireSession()
+  const db = getDb()
+  const member = await db.query.projectMember.findFirst({
+    where: { id: memberId }, columns: { id: true, projectId: true },
+  })
+  if (!member) throw new Error('Grant not found')
+  const orgId = await getOrgIdForProject(member.projectId)
+  if (!orgId) throw new Error('Project not found')
+  await requireCan(session.userId, orgId, (a) => a.can('Edit', subject('ProjectMember', { projectId: member.projectId })))
+  await db.update(schema.projectMember).set({ role }).where(orm.eq(schema.projectMember.id, member.id))
+  return { id: member.id, role }
+}
+
+export async function removeProjectMemberAction({ memberId }: { memberId: string }) {
+  const session = await requireSession()
+  const db = getDb()
+  const member = await db.query.projectMember.findFirst({
+    where: { id: memberId }, columns: { id: true, projectId: true },
+  })
+  if (!member) throw new Error('Grant not found')
+  const orgId = await getOrgIdForProject(member.projectId)
+  if (!orgId) throw new Error('Project not found')
+  await requireCan(session.userId, orgId, (a) => a.can('Delete', subject('ProjectMember', { projectId: member.projectId })))
+  await db.delete(schema.projectMember).where(orm.eq(schema.projectMember.id, member.id))
+  return { id: member.id }
+}
+
 // ── API Token actions ───────────────────────────────────────────────
 
 export async function createTokenAction({ name, projectId, environmentId, readOnly }: {
