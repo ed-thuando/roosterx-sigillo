@@ -16,9 +16,11 @@ import {
   requirePageSession,
   requirePageOrgMember,
   getOrgIdForProject,
+  getUserAbility,
   deriveEnvironmentSecretsAndNames,
   decrypt,
 } from './db.ts'
+import { subject } from './ability.ts'
 import { apiApp } from './api.ts'
 import { cn } from 'sigillo-app/src/lib/utils'
 import { CreateOrgForm } from 'sigillo-app/src/components/create-org-form'
@@ -383,11 +385,32 @@ export const app = new Spiceflow()
       orderBy: { createdAt: 'asc' },
     })
 
+    // Project-level access grants + data needed by the add-grant form.
+    const projectMembers = await db.query.projectMember.findMany({
+      where: { projectId },
+      with: {
+        user: { columns: { id: true, name: true, email: true, image: true } },
+        environment: { columns: { id: true, name: true, slug: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+    const environments = await db.query.environment.findMany({
+      where: { projectId },
+      columns: { id: true, name: true, slug: true },
+      orderBy: { createdAt: 'asc' },
+    })
+    const ability = await getUserAbility(session.userId, orgId)
+    const canManageProjectMembers = ability.can('Create', subject('ProjectMember', { projectId }))
+
     return {
       orgId,
+      projectId,
       role,
       currentUserId: session.userId,
       members,
+      projectMembers,
+      environments,
+      canManageProjectMembers,
     }
   })
 
