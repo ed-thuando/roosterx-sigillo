@@ -54,6 +54,7 @@ function SecretValueCell({
   visible,
   onToggle,
   isDirty,
+  canWrite,
 }: {
   value: string;
   editedValue: string | undefined;
@@ -61,6 +62,7 @@ function SecretValueCell({
   visible: boolean;
   onToggle: () => void;
   isDirty?: boolean;
+  canWrite: boolean;
 }) {
   const displayValue = editedValue ?? value;
 
@@ -74,11 +76,11 @@ function SecretValueCell({
         data-lpignore="true"
         value={visible ? displayValue : "••••••••••••"}
         onChange={(e) => {
-          if (visible) {
+          if (visible && canWrite) {
             onValueChange(e.target.value);
           }
         }}
-        readOnly={!visible}
+        readOnly={!visible || !canWrite}
         onFocus={(e) => {
           if (!visible) {
             e.target.blur()
@@ -113,7 +115,7 @@ export function SecretsTable({
 }: {
   allVisible: boolean;
 }) {
-  const { secrets, selectedEnvId: environmentId, environments, allSecretNames } = useLoaderData('/dash/projects/:projectId/envs/:envSlug');
+  const { secrets, selectedEnvId: environmentId, environments, allSecretNames, canWriteSecret } = useLoaderData('/dash/projects/:projectId/envs/:envSlug');
   const [newSecrets, setNewSecrets] = useState<Array<{ id: string; name: string; value: string }>>([]);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -252,13 +254,14 @@ export function SecretsTable({
           description="Add secrets manually or import them from a .env file to get started."
         >
           <div className="flex items-center gap-3">
-            <Button size="sm" onClick={addNewSecret}>
+            <Button size="sm" disabled={!canWriteSecret} onClick={addNewSecret}>
               <PlusIcon className="size-4" />
               Add Secret
             </Button>
             <Button
               size="sm"
               variant="outline"
+              disabled={!canWriteSecret}
               onClick={() => setImportOpen(true)}
             >
               <UploadIcon className="size-4" />
@@ -300,8 +303,9 @@ export function SecretsTable({
                     <Input
                       type="text"
                       inputSize="sm"
+                      readOnly={!canWriteSecret}
                       value={edits[secret.id]?.name ?? secret.name}
-                      onChange={(e) => setEdit(secret.id, "name", e.target.value)}
+                      onChange={(e) => { if (canWriteSecret) setEdit(secret.id, "name", e.target.value); }}
                       className={cn(
                         "w-full min-w-0 border-transparent bg-transparent px-1.5 mono-sm font-medium focus:border-input hover:border-input",
                         isDirty && "text-amber-700 dark:text-amber-400 border-amber-400/50 focus:ring-amber-500",
@@ -316,6 +320,7 @@ export function SecretsTable({
                       visible={isVisible}
                       onToggle={() => setRowVisible((prev) => ({ ...prev, [secret.id]: !isVisible }))}
                       isDirty={isDirty}
+                      canWrite={canWriteSecret}
                     />
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
@@ -325,9 +330,10 @@ export function SecretsTable({
                   </TableCell>
                   <TableCell className="p-0">
                     <button
+                      disabled={!canWriteSecret}
                       onClick={() => setDeleteTarget({ name: secret.name })}
-                      className="text-muted-foreground hover:text-destructive cursor-pointer"
-                      title="Delete secret"
+                      className="text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
+                      title={canWriteSecret ? "Delete secret" : "You don't have permission to delete secrets"}
                     >
                       <TrashIcon className="size-3.5" />
                     </button>
@@ -353,8 +359,9 @@ export function SecretsTable({
                       data-1p-ignore
                       data-lpignore="true"
                       placeholder="Missing — add a value"
+                      readOnly={!canWriteSecret}
                       value={missingEdits[name] ?? ""}
-                      onChange={(e) => setMissingEdits((prev) => ({ ...prev, [name]: e.target.value }))}
+                      onChange={(e) => { if (canWriteSecret) setMissingEdits((prev) => ({ ...prev, [name]: e.target.value })); }}
                        className={cn(
                          "w-full min-w-0 mono-sm border-destructive/40",
                          hasValue ? "bg-amber-50/50 dark:bg-amber-950/20" : "text-security-disc bg-transparent",
@@ -423,7 +430,7 @@ export function SecretsTable({
 
         {/* Bottom bar: add secret + import */}
         <div className="flex flex-wrap items-center gap-2 px-1 pb-2">
-          <Button onClick={addNewSecret} size="xs">
+          <Button onClick={addNewSecret} size="xs" disabled={!canWriteSecret}>
             <PlusIcon className="size-3" />
             Add Secret
           </Button>
@@ -432,6 +439,7 @@ export function SecretsTable({
               onClick={() => setSyncOpen(true)}
               size="xs"
               variant="ghost"
+              disabled={!canWriteSecret}
             >
               <ArrowDownToLineIcon className="size-3" />
               Sync {missingKeys.length} missing
@@ -442,6 +450,7 @@ export function SecretsTable({
             onClick={() => setImportOpen(true)}
             size="xs"
             variant="ghost"
+            disabled={!canWriteSecret}
           >
             <UploadIcon className="size-3" />
             Import .env

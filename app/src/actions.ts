@@ -55,15 +55,22 @@ export async function createProjectAction({ name, orgId }: { name: string; orgId
   if (!name) throw new Error('Name is required')
   if (!orgId) throw new Error('No org selected')
   const session = await requireSession()
-  await requireCan(session.userId, orgId, (a) => a.can('manage', 'all'))
+  // Any org member may create a project. Non-admin creators are granted
+  // project-admin on the new project so they can manage what they created;
+  // org-admins already have full access and need no grant row.
+  const { role } = await requireOrgMember(session.userId, orgId)
   const db = getDb()
   const projectId = ulid()
+  const grantRow = role === 'admin'
+    ? []
+    : [db.insert(schema.projectMember).values({ projectId, userId: session.userId, role: 'admin' })]
   const [[proj]] = await db.batch([
     db.insert(schema.project).values({ id: projectId, name, orgId })
       .returning({ id: schema.project.id, name: schema.project.name }),
     ...schema.DEFAULT_ENVIRONMENTS.map((e) =>
       db.insert(schema.environment).values({ projectId, name: e.name, slug: e.slug }),
     ),
+    ...grantRow,
   ] as const)
   throw redirect(router.href('/dash/projects/:projectId', { projectId: proj!.id }))
 }
@@ -304,7 +311,7 @@ export async function addProjectMemberAction({ projectId, userId, environmentId,
   projectId: string
   userId: string
   environmentId?: string | null
-  role: 'admin' | 'member' | 'viewer'
+  role: 'admin' | 'write' | 'read'
 }) {
   if (!projectId || !userId) throw new Error('Project and user are required')
   const session = await requireSession()
@@ -345,7 +352,7 @@ export async function addProjectMemberAction({ projectId, userId, environmentId,
 
 export async function updateProjectMemberRoleAction({ memberId, role }: {
   memberId: string
-  role: 'admin' | 'member' | 'viewer'
+  role: 'admin' | 'write' | 'read'
 }) {
   const session = await requireSession()
   const db = getDb()
