@@ -863,9 +863,11 @@ function Navbar({ mobileMenuSlot }: { mobileMenuSlot?: React.ReactNode }) {
         <div className="flex h-14 items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-2">
             {mobileMenuSlot}
-            <Link href="/" className="text-primary hover:opacity-80 transition-opacity">
+            {/* Root ('/') is served by holocron, not a typed spiceflow route,
+                so use a plain anchor for this cross-app navigation. */}
+            <a href="/" className="text-primary hover:opacity-80 transition-opacity">
               <SigilloLogo className="h-[36px] w-auto shrink-0" />
-            </Link>
+            </a>
           </div>
           <div className="hidden md:flex items-center gap-3">
             <a
