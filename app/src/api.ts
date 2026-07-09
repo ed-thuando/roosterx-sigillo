@@ -344,6 +344,51 @@ export const apiApp = new Spiceflow()
     },
   })
 
+  // ── Org Invitations ───────────────────────────────────────────────────
+  .route({
+    method: 'GET',
+    path: '/api/v0/orgs/:orgId/invitations',
+    detail: { tags: ['Organizations'], summary: 'List pending org invitations' },
+    async handler({ params, request }) {
+      const auth = await requireApiSession(request)
+      const orgId = params.orgId
+      const db = getDb()
+      const { role } = await requireApiOrgMember(auth.userId, orgId)
+      if (role !== 'admin') throw json({ error: 'Only admins can view invitations' }, { status: 403 })
+      const invitations = await db.query.orgInvitation.findMany({
+        where: { orgId },
+        orderBy: { createdAt: 'desc' },
+      })
+      return {
+        invitations: invitations.map((inv) => ({
+          id: inv.id,
+          role: inv.role,
+          expiresAt: inv.expiresAt,
+          createdAt: inv.createdAt,
+        })),
+      }
+    },
+  })
+  .route({
+    method: 'DELETE',
+    path: '/api/v0/orgs/:orgId/invitations/:id',
+    detail: { tags: ['Organizations'], summary: 'Revoke an org invitation' },
+    async handler({ params, request }) {
+      const auth = await requireApiSession(request)
+      const orgId = params.orgId
+      const db = getDb()
+      const { role } = await requireApiOrgMember(auth.userId, orgId)
+      if (role !== 'admin') throw json({ error: 'Only admins can revoke invitations' }, { status: 403 })
+      const invite = await db.query.orgInvitation.findFirst({
+        where: { id: params.id, orgId },
+        columns: { id: true },
+      })
+      if (!invite) throw json({ error: 'Invitation not found' }, { status: 404 })
+      await db.delete(schema.orgInvitation).where(orm.eq(schema.orgInvitation.id, params.id))
+      return { ok: true as const, id: invite.id }
+    },
+  })
+
   // ── Projects ────────────────────────────────────────────────────
   .route({
     method: 'POST',

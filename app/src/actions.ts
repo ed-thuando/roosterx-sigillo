@@ -58,10 +58,10 @@ export async function createProjectAction({ name, orgId }: { name: string; orgId
   // Any org member may create a project. Non-admin creators are granted
   // project-admin on the new project so they can manage what they created;
   // org-admins already have full access and need no grant row.
-  const { role } = await requireOrgMember(session.userId, orgId)
+  const { role: userRole } = await requireOrgMember(session.userId, orgId)
   const db = getDb()
   const projectId = ulid()
-  const grantRow = role === 'admin'
+  const grantRow = userRole === 'admin'
     ? []
     : [db.insert(schema.projectMember).values({ projectId, userId: session.userId, role: 'admin' })]
   const [[proj]] = await db.batch([
@@ -243,15 +243,16 @@ export async function setEnvAccessAction({ id, locked, visibility }: {
 
 const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
-export async function createInviteAction({ orgId }: { orgId: string }) {
+export async function createInviteAction({ orgId, role = 'member' }: { orgId: string; role?: 'admin' | 'member' }) {
   if (!orgId) throw new Error('No org selected')
   const session = await requireSession()
-  const { role } = await requireOrgMember(session.userId, orgId)
-  if (role !== 'admin') throw new Error('Only admins can create invites')
+  const { role: userRole } = await requireOrgMember(session.userId, orgId)
+  if (userRole !== 'admin') throw new Error('Only admins can create invites')
   const db = getDb()
   const [invite] = await db.insert(schema.orgInvitation).values({
     orgId,
     createdBy: session.userId,
+    role,
     expiresAt: Date.now() + INVITE_EXPIRY_MS,
   }).returning({ id: schema.orgInvitation.id })
   return { id: invite!.id }
@@ -275,6 +276,21 @@ export async function acceptInviteAction({ invitationId }: { invitationId: strin
     .onConflictDoNothing({ target: [schema.orgMember.orgId, schema.orgMember.userId] })
     .returning({ id: schema.orgMember.id })
   throw redirect(router.href('/dash/orgs/:orgId', { orgId: invite.orgId }))
+}
+
+export async function revokeInviteAction({ id }: { id: string }) {
+  if (!id) throw new Error('Invitation ID is required')
+  const session = await requireSession()
+  const db = getDb()
+  const invite = await db.query.orgInvitation.findFirst({
+    where: { id },
+    columns: { orgId: true },
+  })
+  if (!invite) throw new Error('Invitation not found')
+  const { role } = await requireOrgMember(session.userId, invite.orgId)
+  if (role !== 'admin') throw new Error('Only admins can revoke invites')
+  await db.delete(schema.orgInvitation).where(orm.eq(schema.orgInvitation.id, id))
+  return { id }
 }
 
 export async function updateOrgMemberRoleAction({ memberId, role }: {

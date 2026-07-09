@@ -14,7 +14,7 @@ import {
   createEnvAction,
   renameEnvAction,
   deleteEnvAction,
-} from "sigillo-app/src/actions"
+} from "../actions.ts"
 import { InviteButton } from "sigillo-app/src/components/invite-dialog"
 import { Button } from "sigillo-app/src/components/ui/button"
 import { Frame } from "sigillo-app/src/components/ui/frame"
@@ -165,6 +165,11 @@ function AccessMatrix({
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="min-w-48">
+              <Button variant="outline" size="sm" onClick={() => setDialog({ type: "add" })}>
+                <PlusIcon className="size-4" /> Env
+              </Button>
+            </TableHead>
             <TableHead className="min-w-48">Member</TableHead>
             <TableHead className="w-32">Org role</TableHead>
             {environments.map((env) => (
@@ -177,13 +182,6 @@ function AccessMatrix({
                 />
               </TableHead>
             ))}
-            {canWriteEnv ? (
-              <TableHead>
-                <Button variant="outline" size="sm" onClick={() => setDialog({ type: "add" })}>
-                  <PlusIcon className="size-4" /> Env
-                </Button>
-              </TableHead>
-            ) : null}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -191,7 +189,8 @@ function AccessMatrix({
             const userId = member.user?.id
             const isFull = member.role === "admin"
             return (
-              <TableRow key={member.id}>
+<TableRow key={member.id}>
+                <TableCell />
                 <TableCell>
                   <MemberCell member={member} currentUserId={currentUserId} />
                 </TableCell>
@@ -244,7 +243,7 @@ function AccessMatrix({
                     </TableCell>
                   )
                 })}
-                {canWriteEnv ? <TableCell /> : null}
+                
               </TableRow>
             )
           })}
