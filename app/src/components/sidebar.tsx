@@ -70,12 +70,6 @@ function SidebarContent({
     if (currentPath.endsWith('/access')) return router.href('/dash/projects/:projectId/access', { projectId: target.id });
     if (currentPath.endsWith('/tokens')) return router.href('/dash/projects/:projectId/tokens', { projectId: target.id });
     if (currentPath.endsWith('/settings')) return router.href('/dash/projects/:projectId/settings', { projectId: target.id });
-    if (currentPath.includes('/event-log')) {
-      const slug = target.firstEnvSlug;
-      return slug
-        ? router.href('/dash/projects/:projectId/envs/:envSlug/event-log', { projectId: target.id, envSlug: slug })
-        : `${base}/event-log`;
-    }
     const slug = target.firstEnvSlug;
     return slug
       ? router.href('/dash/projects/:projectId/envs/:envSlug', { projectId: target.id, envSlug: slug })
