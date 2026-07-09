@@ -542,3 +542,17 @@ export async function deleteOrgAction({ orgId }: { orgId: string }) {
   // raw path to redirect() instead of router.href().
   throw redirect('/')
 }
+
+// Delete a project and all of its environments, secrets, tokens, and access
+// grants. FK cascades (onDelete: 'cascade') remove the children automatically.
+// Only org-admins or project-admins may delete a project.
+export async function deleteProjectAction({ projectId }: { projectId: string }) {
+  if (!projectId) throw new Error('Project ID is required')
+  const session = await requireSession()
+  const orgId = await getOrgIdForProject(projectId)
+  if (!orgId) throw new Error('Project not found')
+  const ability = await requireCan(session.userId, orgId, (a) => a.can('Delete', subject('Project', { id: projectId })))
+  const db = getDb()
+  await db.delete(schema.project).where(orm.eq(schema.project.id, projectId))
+  throw redirect(router.href('/dash/orgs/:orgId', { orgId }))
+}

@@ -64,6 +64,23 @@ function SidebarContent({
   const projects = projectData.projects ?? orgData.projects ?? [];
   const currentOrgId = projectData.orgId ?? orgData.orgId ?? null;
   const currentProjectId = projectData.projectId ?? null;
+  const currentPath = projectData.pathname ?? "";
+  function projectHref(target: { id: string; firstEnvSlug: string | null }) {
+    const base = `/dash/projects/${target.id}`;
+    if (currentPath.endsWith('/access')) return router.href('/dash/projects/:projectId/access', { projectId: target.id });
+    if (currentPath.endsWith('/tokens')) return router.href('/dash/projects/:projectId/tokens', { projectId: target.id });
+    if (currentPath.endsWith('/settings')) return router.href('/dash/projects/:projectId/settings', { projectId: target.id });
+    if (currentPath.includes('/event-log')) {
+      const slug = target.firstEnvSlug;
+      return slug
+        ? router.href('/dash/projects/:projectId/envs/:envSlug/event-log', { projectId: target.id, envSlug: slug })
+        : `${base}/event-log`;
+    }
+    const slug = target.firstEnvSlug;
+    return slug
+      ? router.href('/dash/projects/:projectId/envs/:envSlug', { projectId: target.id, envSlug: slug })
+      : router.href('/dash/projects/:projectId', { projectId: target.id });
+  }
   const [showNewProject, setShowNewProject] = useState(false);
 
   const currentOrg = orgs.find((o) => o.id === currentOrgId);
@@ -140,9 +157,7 @@ function SidebarContent({
         <nav className="flex flex-col gap-0.5">
           {projects.map((project) => {
             const isActive = currentProjectId === project.id;
-            const href = project.firstEnvSlug
-              ? router.href('/dash/projects/:projectId/envs/:envSlug', { projectId: project.id, envSlug: project.firstEnvSlug })
-              : router.href('/dash/projects/:projectId', { projectId: project.id })
+            const href = projectHref(project);
             return (
               <Link
                 key={project.id}

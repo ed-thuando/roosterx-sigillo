@@ -604,12 +604,14 @@ export const app = new Spiceflow()
 
     const [orgRow, projects] = await Promise.all([
       db.query.org.findFirst({ where: { id: orgId }, columns: { name: true } }),
-      db.query.project.findMany({ where: { orgId }, columns: { name: true }, orderBy: { createdAt: 'asc' } }),
+      db.query.project.findMany({ where: { orgId }, columns: { id: true, name: true }, orderBy: { createdAt: 'asc' } }),
     ])
 
     return {
       orgId,
       orgName: orgRow?.name ?? 'Organization',
+      projectId: params.projectId,
+      projectName: projects.find((p) => p.id === params.projectId)?.name ?? 'Project',
       projectNames: projects.map((p) => p.name),
     }
   })
