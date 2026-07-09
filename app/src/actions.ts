@@ -515,5 +515,7 @@ export async function deleteOrgAction({ orgId }: { orgId: string }) {
   // Cascade deletes handle orgMembers, invitations, projects, environments,
   // secretEvents, and apiTokens automatically via foreign key constraints.
   await db.delete(schema.org).where(orm.eq(schema.org.id, orgId))
-  throw redirect(router.href('/'))
+  // Root ('/') is served by holocron, not a typed spiceflow route, so pass the
+  // raw path to redirect() instead of router.href().
+  throw redirect('/')
 }
