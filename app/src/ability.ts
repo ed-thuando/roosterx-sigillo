@@ -118,10 +118,10 @@ export function buildAbility(grants: Grant[]): AppAbility {
 }
 
 // Maps a project_member.role value to the corresponding built-in Role.
-const PROJECT_ROLE: Record<'admin' | 'member' | 'viewer', Role> = {
+const PROJECT_ROLE: Record<'admin' | 'write' | 'read', Role> = {
   admin: 'project-admin',
-  member: 'project-member',
-  viewer: 'project-viewer',
+  write: 'project-member',
+  read: 'project-viewer',
 }
 
 // Translate a user's org role + project_member rows into Grants.
@@ -129,14 +129,32 @@ const PROJECT_ROLE: Record<'admin' | 'member' | 'viewer', Role> = {
 // A user with no org-admin role and no project rows gets no grants (no access).
 export function grantsFromMembership(
   orgRole: 'admin' | 'member' | null,
-  projectRows: { role: 'admin' | 'member' | 'viewer'; projectId: string; environmentId: string | null }[],
+  projectRows: { role: 'admin' | 'write' | 'read'; projectId: string; environmentId: string | null }[],
 ): Grant[] {
   if (orgRole === 'admin') return [{ role: 'org-admin' }]
   return projectRows.map((r) => ({
-    role: PROJECT_ROLE[r.role],
+    // Unknown/stale role values fall back to no-access rather than through the
+    // waterfall in applyGrant (which would otherwise grant admin).
+    role: PROJECT_ROLE[r.role] ?? 'no-access',
     projectId: r.projectId,
     environmentId: r.environmentId ?? undefined,
   }))
+}
+
+// ── Read helpers ────────────────────────────────────────────────────
+// Small wrappers used by loaders/routes to filter lists down to what the
+// caller may read, keeping call sites free of repeated subject() plumbing.
+
+export function canReadProject(ability: AppAbility, projectId: string): boolean {
+  return ability.can('Read', subject('Project', { id: projectId }))
+}
+
+export function filterReadableEnvironments<T extends { id: string }>(
+  ability: AppAbility,
+  projectId: string,
+  envs: T[],
+): T[] {
+  return envs.filter((e) => ability.can('Read', subject('Environment', { projectId, id: e.id })))
 }
 
 // Build the ability for an API token from its capability + scope.

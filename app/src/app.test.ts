@@ -679,7 +679,7 @@ describe('RBAC — scoped project grants', () => {
   // an authed fetch client for them.
   async function makeScopedUser(
     name: string,
-    grant: { role: 'admin' | 'member' | 'viewer'; environmentId?: string } | null,
+    grant: { role: 'admin' | 'write' | 'read'; environmentId?: string } | null,
   ) {
     const db = getDb()
     const u = await createTestUser({ name })
@@ -715,7 +715,7 @@ describe('RBAC — scoped project grants', () => {
   })
 
   test('viewer can read secret values but cannot write', async () => {
-    const viewer = await makeScopedUser('RbacViewer', { role: 'viewer' })
+    const viewer = await makeScopedUser('RbacViewer', { role: 'read' })
     const got = assertOk(await viewer('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
       params: { pid: projectId, eid: devEnvId, name: 'SHARED' },
     }))
@@ -730,7 +730,7 @@ describe('RBAC — scoped project grants', () => {
   })
 
   test('member can read and write secrets', async () => {
-    const member = await makeScopedUser('RbacMember', { role: 'member' })
+    const member = await makeScopedUser('RbacMember', { role: 'write' })
     assertOk(await member('/api/v0/projects/:pid/environments/:eid/secrets', {
       method: 'POST', params: { pid: projectId, eid: devEnvId }, body: { name: 'BY_MEMBER', value: 'ok' },
     }))
@@ -741,7 +741,7 @@ describe('RBAC — scoped project grants', () => {
   })
 
   test('environment-scoped grant limits access to that environment', async () => {
-    const prodOnly = await makeScopedUser('RbacProdOnly', { role: 'viewer', environmentId: prodEnvId })
+    const prodOnly = await makeScopedUser('RbacProdOnly', { role: 'read', environmentId: prodEnvId })
     // prod: allowed
     assertOk(await prodOnly('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
       params: { pid: projectId, eid: prodEnvId, name: 'SHARED' },
@@ -760,7 +760,7 @@ describe('RBAC — scoped project grants', () => {
   })
 
   test('project-member cannot manage environments or delete the project', async () => {
-    const member = await makeScopedUser('RbacMemberMgmt', { role: 'member' })
+    const member = await makeScopedUser('RbacMemberMgmt', { role: 'write' })
     assertErrorStatus(await member('/api/v0/projects/:pid/environments', {
       method: 'POST', params: { pid: projectId }, body: { name: 'Nope', slug: 'nope' },
     }), 403)
@@ -775,6 +775,85 @@ describe('RBAC — scoped project grants', () => {
       method: 'POST', params: { pid: projectId }, body: { name: 'AdminEnv', slug: 'adminenv' },
     }))
     expect(created.ok).toBe(true)
+  })
+})
+
+// ── RBAC — read gating (list filtering) & open project creation ─────
+// Guards the read-path fixes: env/project lists must be scoped to the
+// caller's grants, and any org member may create a project (becoming its
+// project-admin).
+
+describe('RBAC — read gating & project creation', () => {
+  let ownerFetch: ReturnType<typeof authedFetch>
+  let orgId: string
+  let projectId: string
+  let devEnvId: string
+  let prodEnvId: string
+
+  async function makeMember(
+    name: string,
+    grant: { role: 'admin' | 'write' | 'read'; environmentId?: string } | null,
+  ) {
+    const db = getDb()
+    const u = await createTestUser({ name })
+    await db.insert(schema.orgMember).values({ orgId, userId: u.user.id, role: 'member' })
+    if (grant) {
+      await db.insert(schema.projectMember).values({
+        projectId, userId: u.user.id, environmentId: grant.environmentId ?? null, role: grant.role,
+      })
+    }
+    return authedFetch(u.token)
+  }
+
+  beforeAll(async () => {
+    const owner = await createTestUser({ name: 'ReadGateOwner' })
+    ownerFetch = authedFetch(owner.token)
+    const org = assertOk(await ownerFetch('/api/v0/orgs', { method: 'POST', body: { name: 'ReadGate Org' } }))
+    orgId = org.id
+    const proj = assertOk(await ownerFetch('/api/v0/projects', { method: 'POST', body: { name: 'ReadGate Project', orgId } }))
+    projectId = proj.id
+    const envs = assertOk(await ownerFetch('/api/v0/projects/:pid/environments', { params: { pid: projectId } }))
+    devEnvId = envs.environments.find((e) => e.slug === 'dev')!.id
+    prodEnvId = envs.environments.find((e) => e.slug === 'prod')!.id
+  })
+
+  test('whole-project viewer sees every environment in the list', async () => {
+    const viewer = await makeMember('ReadGateViewerAll', { role: 'read' })
+    const res = assertOk(await viewer('/api/v0/projects/:pid/environments', { params: { pid: projectId } }))
+    const ids = res.environments.map((e) => e.id)
+    expect(ids).toContain(devEnvId)
+    expect(ids).toContain(prodEnvId)
+  })
+
+  test('env-scoped viewer sees only the granted environment in the list', async () => {
+    const prodOnly = await makeMember('ReadGateProdOnly', { role: 'read', environmentId: prodEnvId })
+    const res = assertOk(await prodOnly('/api/v0/projects/:pid/environments', { params: { pid: projectId } }))
+    const ids = res.environments.map((e) => e.id)
+    expect(ids).toEqual([prodEnvId])
+    expect(ids).not.toContain(devEnvId)
+  })
+
+  test('org member with no grant is 404 on GET project and its environments', async () => {
+    const noGrant = await makeMember('ReadGateNoGrant', null)
+    assertErrorStatus(await noGrant('/api/v0/projects/:id', { params: { id: projectId } }), 404)
+    assertErrorStatus(await noGrant('/api/v0/projects/:pid/environments', { params: { pid: projectId } }), 404)
+  })
+
+  test('GET /projects excludes projects the caller has no grant on', async () => {
+    const noGrant = await makeMember('ReadGateNoGrantList', null)
+    const res = assertOk(await noGrant('/api/v0/projects'))
+    expect(res.projects.some((p) => p.id === projectId)).toBe(false)
+  })
+
+  test('any org member can create a project and becomes its admin', async () => {
+    const member = await makeMember('ReadGateCreator', null)
+    const created = assertOk(await member('/api/v0/projects', { method: 'POST', body: { name: 'Member Made', orgId } }))
+    expect(created.ok).toBe(true)
+    // Creator got project-admin: can manage the new project's environments.
+    const env = assertOk(await member('/api/v0/projects/:pid/environments', {
+      method: 'POST', params: { pid: created.id }, body: { name: 'CreatorEnv', slug: 'creatorenv' },
+    }))
+    expect(env.ok).toBe(true)
   })
 })
 
@@ -982,22 +1061,23 @@ describe('migration parity — projectMember backfill', () => {
     ]).returning({ id: schema.project.id })
     projectIds = projs.map((p) => p.id)
 
-    // Run the migration's backfill, scoped to this org so it is isolated.
+    // Run the migration's backfill (0003) followed by the role rename (0004),
+    // scoped to this org so it is isolated. End state: whole-project 'write' grants.
     await db.run(sql`
       INSERT INTO project_member (id, project_id, user_id, environment_id, role, created_at)
-      SELECT lower(hex(randomblob(16))), p.id, om.user_id, NULL, 'member', unixepoch() * 1000
+      SELECT lower(hex(randomblob(16))), p.id, om.user_id, NULL, 'write', unixepoch() * 1000
       FROM org_member om
       JOIN project p ON p.org_id = om.org_id
       WHERE om.role = 'member' AND om.org_id = ${orgId}
     `)
   })
 
-  test('creates one member grant per (member, project), excluding admins', async () => {
+  test('creates one write grant per (member, project), excluding admins', async () => {
     const db = getDb()
     const rows = await db.query.projectMember.findMany({ where: { projectId: { in: projectIds } } })
     // 2 members × 2 projects = 4 rows; admin excluded
     expect(rows.length).toBe(4)
-    expect(rows.every((r) => r.role === 'member')).toBe(true)
+    expect(rows.every((r) => r.role === 'write')).toBe(true)
     expect(rows.every((r) => r.environmentId === null)).toBe(true)
     expect(rows.some((r) => r.userId === adminId)).toBe(false)
     expect(new Set(rows.map((r) => r.userId))).toEqual(new Set([memberId, member2Id]))

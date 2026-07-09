@@ -18,8 +18,8 @@ import {
   requireApiSession,
   requireApiOrgMember,
   requireApiCan,
-  requireApiOrgAdmin,
   requireSecretsApiAuth,
+  getUserAbility,
   getOrgIdForProject,
   getOrgIdForEnvironment,
   getProjectIdForEnvironment,
@@ -29,7 +29,7 @@ import {
   encrypt,
   decrypt,
 } from './db.ts'
-import { subject } from './ability.ts'
+import { subject, canReadProject, filterReadableEnvironments } from './ability.ts'
 
 const userSelectSchema = createSelectSchema(schema.user)
 const orgSelectSchema = createSelectSchema(schema.org)
@@ -354,15 +354,20 @@ export const apiApp = new Spiceflow()
     async handler({ request }) {
       const body = await request.json()
       const session = await requireApiSession(request)
-      await requireApiOrgAdmin(session.userId, body.orgId)
+      // Any org member may create a project; non-admins get project-admin on it.
+      const { role } = await requireApiOrgMember(session.userId, body.orgId)
       const db = getDb()
       const projectId = ulid()
+      const grantRow = role === 'admin'
+        ? []
+        : [db.insert(schema.projectMember).values({ projectId, userId: session.userId, role: 'admin' })]
       const [[proj]] = await db.batch([
         db.insert(schema.project).values({ id: projectId, name: body.name, orgId: body.orgId })
           .returning({ id: schema.project.id, name: schema.project.name, orgId: schema.project.orgId }),
         ...schema.DEFAULT_ENVIRONMENTS.map((e) =>
           db.insert(schema.environment).values({ projectId, name: e.name, slug: e.slug }),
         ),
+        ...grantRow,
       ] as const)
       return { ok: true, ...proj! }
     },
@@ -396,26 +401,30 @@ export const apiApp = new Spiceflow()
         await requireApiOrgMember(session.userId, query.orgId)
       }
 
-      const projects = memberships.flatMap((membership) => {
+      const projects = (await Promise.all(memberships.map(async (membership) => {
         if (!membership.org) return []
         const org = membership.org
-        return org.projects.map((project) => ({
-          id: project.id,
-          orgId: project.orgId,
-          orgName: org.name,
-          name: project.name,
-          createdAt: project.createdAt,
-          updatedAt: project.updatedAt,
-          environments: project.environments.map((environment) => ({
-            id: environment.id,
-            projectId: environment.projectId,
-            name: environment.name,
-            slug: environment.slug,
-            createdAt: environment.createdAt,
-            updatedAt: environment.updatedAt,
-          })),
-        }))
-      })
+        // Scope to what the caller may read within this org (org-admins see all).
+        const ability = await getUserAbility(session.userId, org.id)
+        return org.projects
+          .filter((project) => canReadProject(ability, project.id))
+          .map((project) => ({
+            id: project.id,
+            orgId: project.orgId,
+            orgName: org.name,
+            name: project.name,
+            createdAt: project.createdAt,
+            updatedAt: project.updatedAt,
+            environments: filterReadableEnvironments(ability, project.id, project.environments).map((environment) => ({
+              id: environment.id,
+              projectId: environment.projectId,
+              name: environment.name,
+              slug: environment.slug,
+              createdAt: environment.createdAt,
+              updatedAt: environment.updatedAt,
+            })),
+          }))
+      }))).flat()
       return { projects }
     },
   })
@@ -430,6 +439,8 @@ export const apiApp = new Spiceflow()
       const orgId = await getOrgIdForProject(params.id)
       if (!orgId) return json({ error: 'not found' }, { status: 404 })
       await requireApiOrgMember(session.userId, orgId)
+      const ability = await getUserAbility(session.userId, orgId)
+      if (!canReadProject(ability, params.id)) return json({ error: 'not found' }, { status: 404 })
       const db = getDb()
       const project = await db.query.project.findFirst({
         where: { id: params.id },
@@ -443,7 +454,7 @@ export const apiApp = new Spiceflow()
         name: project.name,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
-        environments: project.environments.map((environment) => ({
+        environments: filterReadableEnvironments(ability, project.id, project.environments).map((environment) => ({
           id: environment.id,
           projectId: environment.projectId,
           name: environment.name,
@@ -505,8 +516,11 @@ export const apiApp = new Spiceflow()
       const orgId = await getOrgIdForProject(params.projectId)
       if (!orgId) return json({ error: 'not found' }, { status: 404 })
       await requireApiOrgMember(session.userId, orgId)
+      const ability = await getUserAbility(session.userId, orgId)
+      if (!canReadProject(ability, params.projectId)) return json({ error: 'not found' }, { status: 404 })
       const db = getDb()
-      const environments = (await db.query.environment.findMany({ where: { projectId: params.projectId }, orderBy: { createdAt: 'asc' } })).map((environment) => ({
+      const rows = await db.query.environment.findMany({ where: { projectId: params.projectId }, orderBy: { createdAt: 'asc' } })
+      const environments = filterReadableEnvironments(ability, params.projectId, rows).map((environment) => ({
         id: environment.id,
         projectId: environment.projectId,
         name: environment.name,
@@ -546,9 +560,12 @@ export const apiApp = new Spiceflow()
       const session = await requireApiSession(request)
       const environment = await resolveEnvironment(params.id, params.projectId)
       const orgId = environment?.orgId ?? null
-      if (!orgId) return json({ error: 'not found' }, { status: 404 })
+      if (!orgId || !environment) return json({ error: 'not found' }, { status: 404 })
       await requireApiOrgMember(session.userId, orgId)
-      if (!environment) return json({ error: 'not found' }, { status: 404 })
+      const ability = await getUserAbility(session.userId, orgId)
+      if (!ability.can('Read', subject('Environment', { projectId: environment.projectId, id: environment.id }))) {
+        return json({ error: 'not found' }, { status: 404 })
+      }
       return {
         id: environment.id,
         projectId: environment.projectId,

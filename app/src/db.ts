@@ -395,7 +395,7 @@ const lookupProjectGrants = memoize({
   fn: async (
     userId: string,
     orgId: string,
-  ): Promise<{ role: 'admin' | 'member' | 'viewer'; projectId: string; environmentId: string | null }[]> => {
+  ): Promise<{ role: 'admin' | 'write' | 'read'; projectId: string; environmentId: string | null }[]> => {
     const db = getDb()
     const rows = await db.query.projectMember.findMany({
       where: { userId },
@@ -439,6 +439,19 @@ export async function requireCan(
 ): Promise<void> {
   const ability = await getUserAbility(userId, orgId)
   if (!check(ability)) throw new Error('FORBIDDEN')
+}
+
+// Page-loader variant: redirects to the dashboard root instead of throwing,
+// and returns the compiled ability so the loader can reuse it for filtering
+// without a second getUserAbility call.
+export async function requirePageCan(
+  userId: string,
+  orgId: string,
+  check: (ability: AppAbility) => boolean,
+): Promise<AppAbility> {
+  const ability = await getUserAbility(userId, orgId)
+  if (!check(ability)) throw redirect('/dash')
+  return ability
 }
 
 // Org-admin only — for administration not tied to an existing project scope

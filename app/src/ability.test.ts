@@ -100,15 +100,15 @@ describe('no-access', () => {
 
 describe('grantsFromMembership', () => {
   it('gives org admins full access, ignoring project rows', () => {
-    const grants = grantsFromMembership('admin', [{ role: 'viewer', projectId: PROJ_A, environmentId: null }])
+    const grants = grantsFromMembership('admin', [{ role: 'read', projectId: PROJ_A, environmentId: null }])
     expect(grants).toEqual([{ role: 'org-admin' }])
     expect(buildAbility(grants).can('Delete', secret(PROJ_B, ENV_DEV))).toBe(true)
   })
 
   it('maps project rows to scoped grants for non-admins', () => {
     const grants = grantsFromMembership('member', [
-      { role: 'viewer', projectId: PROJ_A, environmentId: null },
-      { role: 'member', projectId: PROJ_B, environmentId: ENV_PROD },
+      { role: 'read', projectId: PROJ_A, environmentId: null },
+      { role: 'write', projectId: PROJ_B, environmentId: ENV_PROD },
     ])
     expect(grants).toEqual([
       { role: 'project-viewer', projectId: PROJ_A, environmentId: undefined },

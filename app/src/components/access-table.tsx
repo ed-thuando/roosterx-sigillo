@@ -56,7 +56,7 @@ export function AccessPage() {
   )
 }
 
-type ProjectRole = "admin" | "member" | "viewer"
+type ProjectRole = "admin" | "write" | "read"
 
 type ProjectGrant = {
   id: string
@@ -77,7 +77,7 @@ export function ProjectAccessTable() {
   // Add-grant form state
   const [addUserId, setAddUserId] = useState("")
   const [addEnvId, setAddEnvId] = useState("")
-  const [addRole, setAddRole] = useState<ProjectRole>("viewer")
+  const [addRole, setAddRole] = useState<ProjectRole>("read")
   const [adding, setAdding] = useState(false)
 
   const grants = projectMembers as ProjectGrant[]
@@ -131,7 +131,7 @@ export function ProjectAccessTable() {
         })
         setAddUserId("")
         setAddEnvId("")
-        setAddRole("viewer")
+        setAddRole("read")
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to add grant")
       } finally {
@@ -169,8 +169,8 @@ export function ProjectAccessTable() {
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-muted-foreground">Role</label>
             <NativeSelect value={addRole} onChange={(e) => setAddRole(e.currentTarget.value as ProjectRole)}>
-              <option value="viewer">Viewer</option>
-              <option value="member">Member</option>
+              <option value="read">Read</option>
+              <option value="write">Write</option>
               <option value="admin">Admin</option>
             </NativeSelect>
           </div>
@@ -238,8 +238,8 @@ export function ProjectAccessTable() {
                           value={grant.role}
                           onChange={(e) => saveRole(grant, e.currentTarget.value as ProjectRole)}
                         >
-                          <option value="viewer">Viewer</option>
-                          <option value="member">Member</option>
+                          <option value="read">Read</option>
+                          <option value="write">Write</option>
                           <option value="admin">Admin</option>
                         </NativeSelect>
                         {isSavingRole ? (

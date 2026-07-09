@@ -74,10 +74,24 @@ function getEnvColor(name: string, slug: string): string {
 }
 
 // Inline editable name+slug cell for a single environment row.
-function EditableEnvCell({ env, field }: { env: Environment; field: "name" | "slug" }) {
+function EditableEnvCell({ env, field, canWrite }: { env: Environment; field: "name" | "slug"; canWrite: boolean }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(env[field]);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Read-only viewers see the value without edit affordances.
+  if (!canWrite) {
+    return field === "name" ? (
+      <span className="flex items-center gap-2">
+        <span className={cn("size-2 rounded-full", getEnvColor(env.name, env.slug))} />
+        {env.name}
+      </span>
+    ) : (
+      <Badge variant="outline" size="default">
+        <span className="mono-sm">{env.slug}</span>
+      </Badge>
+    );
+  }
 
   const save = async () => {
     const trimmed = value.trim();
@@ -156,7 +170,7 @@ export function EnvironmentsPage() {
 }
 
 export function EnvironmentsTable() {
-  const { environments, projectId } = useLoaderData('/dash/projects/:projectId/environments');
+  const { environments, projectId, canWriteEnv } = useLoaderData('/dash/projects/:projectId/environments');
   const [showNewRow, setShowNewRow] = useState(false);
 
   const columns: ColumnDef<Environment>[] = [
@@ -164,13 +178,13 @@ export function EnvironmentsTable() {
       accessorKey: "name",
       header: "Environment",
       size: 200,
-      cell: ({ row }) => <EditableEnvCell env={row.original} field="name" />,
+      cell: ({ row }) => <EditableEnvCell env={row.original} field="name" canWrite={canWriteEnv} />,
     },
     {
       accessorKey: "slug",
       header: "Slug",
       size: 160,
-      cell: ({ row }) => <EditableEnvCell env={row.original} field="slug" />,
+      cell: ({ row }) => <EditableEnvCell env={row.original} field="slug" canWrite={canWriteEnv} />,
     },
     {
       accessorKey: "updatedAt",
@@ -197,6 +211,7 @@ export function EnvironmentsTable() {
       size: 50,
       cell: ({ row }) => (
         <button
+          disabled={!canWriteEnv}
           onClick={async (e) => {
             e.stopPropagation();
             if (confirm(`Delete environment "${row.original.name}"? All secrets in this environment will be lost.`)) {
@@ -207,8 +222,8 @@ export function EnvironmentsTable() {
               }
             }
           }}
-          className="text-muted-foreground hover:text-destructive cursor-pointer"
-          title="Delete environment"
+          className="text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
+          title={canWriteEnv ? "Delete environment" : "You don't have permission to delete environments"}
         >
           <TrashIcon className="size-3.5" />
         </button>
@@ -309,8 +324,10 @@ export function EnvironmentsTable() {
           </ErrorBoundary>
         ) : (
           <button
+            disabled={!canWriteEnv}
             onClick={() => setShowNewRow(true)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
+            title={canWriteEnv ? undefined : "You don't have permission to add environments"}
           >
             + Add Environment
           </button>

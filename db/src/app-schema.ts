@@ -204,7 +204,7 @@ export const projectMember = sqliteCore.sqliteTable('project_member', {
   userId: sqliteCore.text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   // Null = whole project; set = scoped to this environment only.
   environmentId: sqliteCore.text('environment_id').references(() => environment.id, { onDelete: 'cascade' }),
-  role: sqliteCore.text('role', { enum: ['admin', 'member', 'viewer'] }).notNull(),
+  role: sqliteCore.text('role', { enum: ['admin', 'write', 'read'] }).notNull(),
   createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
 }, (table) => [
   sqliteCore.index('project_member_project_id_idx').on(table.projectId),

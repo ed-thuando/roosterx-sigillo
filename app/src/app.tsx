@@ -15,12 +15,13 @@ import {
   getDb, getAuth, getSession,
   requirePageSession,
   requirePageOrgMember,
+  requirePageCan,
   getOrgIdForProject,
   getUserAbility,
   deriveEnvironmentSecretsAndNames,
   decrypt,
 } from './db.ts'
-import { subject } from './ability.ts'
+import { subject, canReadProject, filterReadableEnvironments } from './ability.ts'
 import { apiApp } from './api.ts'
 import { cn } from 'sigillo-app/src/lib/utils'
 import { CreateOrgForm } from 'sigillo-app/src/components/create-org-form'
@@ -47,6 +48,24 @@ function hasCookie(args: { cookieHeader: string; name: string }) {
   return args.cookieHeader
     .split(';')
     .some((part) => part.trim().startsWith(`${args.name}=`))
+}
+
+// Resolve where a redirect should land: the first project the caller may read
+// (in the given order) and the first environment within it that they may read.
+// Falls back to slug '_' when the project is readable but has no readable env.
+// Returns null when no project is readable.
+type ProjectWithEnvs = { id: string; environments?: { id: string; slug: string; createdAt: number }[] }
+function firstReadableProjectEnv(
+  ability: import('./ability.ts').AppAbility,
+  projects: ProjectWithEnvs[],
+): { projectId: string; envSlug: string } | null {
+  for (const p of projects) {
+    if (!canReadProject(ability, p.id)) continue
+    const envs = filterReadableEnvironments(ability, p.id, [...(p.environments || [])])
+      .sort((a, b) => a.createdAt - b.createdAt)
+    return { projectId: p.id, envSlug: envs[0]?.slug ?? '_' }
+  }
+  return null
 }
 
 export const app = new Spiceflow()
@@ -110,6 +129,7 @@ export const app = new Spiceflow()
     const db = getDb()
     const session = await requirePageSession(request)
     await requirePageOrgMember(session.userId, params.orgId)
+    const ability = await getUserAbility(session.userId, params.orgId)
 
     const allProjects = await db.query.project.findMany({
       where: { orgId: params.orgId },
@@ -117,10 +137,13 @@ export const app = new Spiceflow()
       orderBy: { createdAt: 'desc' },
     })
 
-    const projects = allProjects.map((p) => {
-      const sortedEnvs = [...(p.environments || [])].sort((a, b) => a.createdAt - b.createdAt)
-      return { id: p.id, name: p.name, firstEnvSlug: sortedEnvs[0]?.slug ?? null }
-    })
+    const projects = allProjects
+      .filter((p) => canReadProject(ability, p.id))
+      .map((p) => {
+        const readableEnvs = filterReadableEnvironments(ability, p.id, [...(p.environments || [])])
+          .sort((a, b) => a.createdAt - b.createdAt)
+        return { id: p.id, name: p.name, firstEnvSlug: readableEnvs[0]?.slug ?? null }
+      })
 
     return {
       orgId: params.orgId,
@@ -139,6 +162,8 @@ export const app = new Spiceflow()
     const orgId = await getOrgIdForProject(projectId)
     if (!orgId) throw Response.redirect(new URL('/', request.url).toString(), 302)
     await requirePageOrgMember(session.userId, orgId)
+    // Must be able to read this project; org-admins and any grant on it pass.
+    const ability = await requirePageCan(session.userId, orgId, (a) => canReadProject(a, projectId))
 
     const allProjects = await db.query.project.findMany({
       where: { orgId },
@@ -146,12 +171,18 @@ export const app = new Spiceflow()
       orderBy: { createdAt: 'desc' },
     })
 
-    const projects = allProjects.map((p) => {
-      const sortedEnvs = [...(p.environments || [])].sort((a, b) => a.createdAt - b.createdAt)
-      return { id: p.id, name: p.name, firstEnvSlug: sortedEnvs[0]?.slug ?? null }
-    })
+    // Sidebar/nav: only projects the caller may read.
+    const projects = allProjects
+      .filter((p) => canReadProject(ability, p.id))
+      .map((p) => {
+        const readableEnvs = filterReadableEnvironments(ability, p.id, [...(p.environments || [])])
+          .sort((a, b) => a.createdAt - b.createdAt)
+        return { id: p.id, name: p.name, firstEnvSlug: readableEnvs[0]?.slug ?? null }
+      })
     const currentProject = allProjects.find((project) => project.id === projectId)
-    const environments = [...(currentProject?.environments || [])].sort((a, b) => a.createdAt - b.createdAt)
+    // Env dropdown/tab bar: only environments in the caller's grant scope.
+    const environments = filterReadableEnvironments(ability, projectId, [...(currentProject?.environments || [])])
+      .sort((a, b) => a.createdAt - b.createdAt)
 
     return {
       orgId,
@@ -212,19 +243,20 @@ export const app = new Spiceflow()
     if (!lastOrg) {
       return Response.redirect(new URL('/dash/new-org', request.url).toString(), 302)
     }
-    const firstProject = await db.query.project.findFirst({
-      where: { orgId: lastOrg.org!.id },
+    const orgId = lastOrg.org!.id
+    const ability = await getUserAbility(session.userId, orgId)
+    const projects = await db.query.project.findMany({
+      where: { orgId },
       columns: { id: true },
-      with: { environments: { columns: { slug: true, createdAt: true } } },
+      with: { environments: { columns: { id: true, slug: true, createdAt: true } } },
       orderBy: { createdAt: 'desc' },
     })
-    if (firstProject) {
-      const sortedEnvs = [...(firstProject.environments || [])].sort((a, b) => a.createdAt - b.createdAt)
-      const envSlug = sortedEnvs[0]?.slug ?? '_'
-      const href = `/dash/projects/${encodeURIComponent(firstProject.id)}/envs/${encodeURIComponent(envSlug)}`
+    const target = firstReadableProjectEnv(ability, projects)
+    if (target) {
+      const href = `/dash/projects/${encodeURIComponent(target.projectId)}/envs/${encodeURIComponent(target.envSlug)}`
       return Response.redirect(new URL(href, request.url).toString(), 302)
     }
-    return Response.redirect(new URL(`/dash/orgs/${encodeURIComponent(lastOrg.org!.id)}`, request.url).toString(), 302)
+    return Response.redirect(new URL(`/dash/orgs/${encodeURIComponent(orgId)}`, request.url).toString(), 302)
   })
 
   // ── Org root redirect → resolve first project+env in one hop ──
@@ -232,16 +264,16 @@ export const app = new Spiceflow()
     const session = await requirePageSession(request)
     await requirePageOrgMember(session.userId, params.orgId)
     const db = getDb()
-    const firstProject = await db.query.project.findFirst({
+    const ability = await getUserAbility(session.userId, params.orgId)
+    const projects = await db.query.project.findMany({
       where: { orgId: params.orgId },
       columns: { id: true },
-      with: { environments: { columns: { slug: true, createdAt: true } } },
+      with: { environments: { columns: { id: true, slug: true, createdAt: true } } },
       orderBy: { createdAt: 'desc' },
     })
-    if (firstProject) {
-      const sortedEnvs = [...(firstProject.environments || [])].sort((a, b) => a.createdAt - b.createdAt)
-      const envSlug = sortedEnvs[0]?.slug ?? '_'
-      const href = `/dash/projects/${encodeURIComponent(firstProject.id)}/envs/${encodeURIComponent(envSlug)}`
+    const target = firstReadableProjectEnv(ability, projects)
+    if (target) {
+      const href = `/dash/projects/${encodeURIComponent(target.projectId)}/envs/${encodeURIComponent(target.envSlug)}`
       return Response.redirect(new URL(href, request.url).toString(), 302)
     }
     return null
@@ -252,15 +284,17 @@ export const app = new Spiceflow()
     const session = await requirePageSession(request)
     await requirePageOrgMember(session.userId, params.orgId)
     const db = getDb()
+    const ability = await getUserAbility(session.userId, params.orgId)
 
     const projects = await db.query.project.findMany({
         where: { orgId: params.orgId },
+        columns: { id: true, name: true },
         orderBy: { createdAt: 'desc' },
       })
-    const projectList = projects.map((p) => ({ id: p.id, name: p.name }))
+    const firstReadable = projects.find((p) => canReadProject(ability, p.id))
 
-    if (projectList[0]) {
-      return Response.redirect(new URL(`/dash/projects/${encodeURIComponent(projectList[0].id)}`, request.url).toString(), 302)
+    if (firstReadable) {
+      return Response.redirect(new URL(`/dash/projects/${encodeURIComponent(firstReadable.id)}`, request.url).toString(), 302)
     }
 
     const { NewProjectButton } = await import('sigillo-app/src/components/sidebar')
@@ -294,10 +328,12 @@ export const app = new Spiceflow()
     const orgId = await getOrgIdForProject(params.projectId)
     if (!orgId) throw Response.redirect(new URL('/', request.url).toString(), 302)
     await requirePageOrgMember(session.userId, orgId)
-    const environments = await db.query.environment.findMany({
-      where: { projectId: params.projectId },
-      orderBy: { createdAt: 'asc' },
-    })
+    const ability = await requirePageCan(session.userId, orgId, (a) => canReadProject(a, params.projectId))
+    const environments = filterReadableEnvironments(
+      ability,
+      params.projectId,
+      await db.query.environment.findMany({ where: { projectId: params.projectId }, orderBy: { createdAt: 'asc' } }),
+    )
     const firstEnvSlug = environments[0]?.slug || '_'
     return redirect(`/dash/projects/${encodeURIComponent(params.projectId)}/envs/${encodeURIComponent(firstEnvSlug)}`)
   })
@@ -305,11 +341,19 @@ export const app = new Spiceflow()
   .loader('/dash/projects/:projectId/envs/:envSlug', async ({ request, params, redirect }) => {
     const db = getDb()
     const { projectId, envSlug } = params
+    const session = await requirePageSession(request)
+    const orgId = await getOrgIdForProject(projectId)
+    if (!orgId) throw redirect('/')
+    await requirePageOrgMember(session.userId, orgId)
+    const ability = await requirePageCan(session.userId, orgId, (a) => canReadProject(a, projectId))
 
-    const environments = await db.query.environment.findMany({
-      where: { projectId },
-      orderBy: { createdAt: 'asc' },
-    })
+    // Only environments the caller may read; the selected env is chosen from
+    // this filtered set so an out-of-scope slug can never be decrypted.
+    const environments = filterReadableEnvironments(
+      ability,
+      projectId,
+      await db.query.environment.findMany({ where: { projectId }, orderBy: { createdAt: 'asc' } }),
+    )
 
     const matchedEnv = environments.find((e) => e.slug === envSlug)
     const selectedEnvId = matchedEnv?.id ?? environments[0]?.id ?? null
@@ -317,6 +361,9 @@ export const app = new Spiceflow()
     if (selectedEnvId && !matchedEnv && environments[0]) {
       throw redirect(`/dash/projects/${encodeURIComponent(projectId)}/envs/${encodeURIComponent(environments[0].slug)}`)
     }
+    const canWriteSecret = selectedEnvId
+      ? ability.can('Edit', subject('Secret', { projectId, environmentId: selectedEnvId }))
+      : false
 
     let secrets: { id: string; name: string; value: string; createdAt: number; updatedAt: number; createdBy: { id: string; name: string } | null }[] = []
     // One D1 batch derives the selected env's secrets AND the union of names
@@ -350,6 +397,7 @@ export const app = new Spiceflow()
       selectedEnvId,
       secrets,
       allSecretNames,
+      canWriteSecret,
       showBanner: !hasCookie({ cookieHeader, name: cliBannerCookieName }),
     }
   })
@@ -360,8 +408,16 @@ export const app = new Spiceflow()
     return <ProjectPage key={loaderData.selectedEnvId ?? 'none'} />
   })
 
-  .loader('/dash/projects/:projectId/environments', async ({ params }) => {
-    return { projectId: params.projectId }
+  .loader('/dash/projects/:projectId/environments', async ({ params, request, redirect }) => {
+    const { projectId } = params
+    const session = await requirePageSession(request)
+    const orgId = await getOrgIdForProject(projectId)
+    if (!orgId) throw redirect('/')
+    await requirePageOrgMember(session.userId, orgId)
+    const ability = await requirePageCan(session.userId, orgId, (a) => canReadProject(a, projectId))
+    // Only project-admins (or org-admins) may create/edit/delete environments.
+    const canWriteEnv = ability.can('Create', subject('Environment', { projectId }))
+    return { projectId, canWriteEnv }
   })
 
   .page('/dash/projects/:projectId/environments', async () => {
@@ -378,6 +434,7 @@ export const app = new Spiceflow()
     const orgId = await getOrgIdForProject(projectId)
     if (!orgId) throw redirect('/')
     const { role } = await requirePageOrgMember(session.userId, orgId)
+    const ability = await requirePageCan(session.userId, orgId, (a) => canReadProject(a, projectId))
 
     const members = await db.query.orgMember.findMany({
       where: { orgId },
@@ -399,7 +456,6 @@ export const app = new Spiceflow()
       columns: { id: true, name: true, slug: true },
       orderBy: { createdAt: 'asc' },
     })
-    const ability = await getUserAbility(session.userId, orgId)
     const canManageProjectMembers = ability.can('Create', subject('ProjectMember', { projectId }))
 
     return {
@@ -431,11 +487,20 @@ export const app = new Spiceflow()
     return redirect(`/dash/projects/${encodeURIComponent(params.projectId)}/envs/${encodeURIComponent(firstEnvSlug)}/event-log`)
   })
 
-  .loader('/dash/projects/:projectId/envs/:envSlug/event-log', async ({ params, redirect }) => {
+  .loader('/dash/projects/:projectId/envs/:envSlug/event-log', async ({ params, request, redirect }) => {
     const db = getDb()
     const { projectId, envSlug } = params
+    const session = await requirePageSession(request)
+    const orgId = await getOrgIdForProject(projectId)
+    if (!orgId) throw redirect('/')
+    await requirePageOrgMember(session.userId, orgId)
+    const ability = await requirePageCan(session.userId, orgId, (a) => canReadProject(a, projectId))
 
-    const environments = await db.query.environment.findMany({ where: { projectId }, orderBy: { createdAt: 'asc' } })
+    const environments = filterReadableEnvironments(
+      ability,
+      projectId,
+      await db.query.environment.findMany({ where: { projectId }, orderBy: { createdAt: 'asc' } }),
+    )
 
     const matchedEnv = environments.find((e) => e.slug === envSlug)
     const selectedEnvId = matchedEnv?.id ?? environments[0]?.id ?? null
@@ -495,9 +560,16 @@ export const app = new Spiceflow()
   })
 
   // ── Tokens page ────────────────────────────────────────────────────
-  .loader('/dash/projects/:projectId/tokens', async ({ params }) => {
+  .loader('/dash/projects/:projectId/tokens', async ({ params, request, redirect }) => {
     const db = getDb()
     const { projectId } = params
+    const session = await requirePageSession(request)
+    const orgId = await getOrgIdForProject(projectId)
+    if (!orgId) throw redirect('/')
+    await requirePageOrgMember(session.userId, orgId)
+    // API tokens carry secret read/write power — only project-admins may list/manage
+    // them, so gating the whole page on Read is sufficient (Read⇔Create⇔Delete here).
+    await requirePageCan(session.userId, orgId, (a) => a.can('Read', subject('ApiToken', { projectId })))
 
     const tokens = await db.query.apiToken.findMany({
       where: { projectId },
@@ -539,6 +611,8 @@ export const app = new Spiceflow()
     const orgId = await getOrgIdForProject(params.projectId)
     if (!orgId) throw redirect('/')
     await requirePageOrgMember(session.userId, orgId)
+    // Settings exposes org deletion — org-admins only.
+    await requirePageCan(session.userId, orgId, (a) => a.can('manage', 'all'))
 
     const [orgRow, projects] = await Promise.all([
       db.query.org.findFirst({ where: { id: orgId }, columns: { name: true } }),
