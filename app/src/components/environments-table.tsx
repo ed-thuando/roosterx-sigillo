@@ -344,32 +344,47 @@ function ShareEnvControl({ env, members, grants, projectId }: {
               {envGrants.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No one shared yet.</p>
               ) : (
-                envGrants.map((g) => (
-                  <div key={g.id} className="flex items-center gap-2">
-                    <span className="text-sm flex-1 truncate">{g.user?.name || g.user?.email || "—"}</span>
-                    <NativeSelect
-                      disabled={busyId === g.id || g.role === "admin"}
-                      value={g.role}
-                      onChange={(e) =>
-                        run(g.id, () =>
-                          updateProjectMemberRoleAction({ memberId: g.id, role: e.currentTarget.value as "read" | "write" }),
-                        )
-                      }
-                    >
-                      <option value="read">Read</option>
-                      <option value="write">Edit</option>
-                      {g.role === "admin" ? <option value="admin">Admin</option> : null}
-                    </NativeSelect>
-                    <button
-                      disabled={busyId === g.id}
-                      onClick={() => run(g.id, () => removeProjectMemberAction({ memberId: g.id }))}
-                      className="text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40"
-                      title="Remove access"
-                    >
-                      {busyId === g.id ? <Spinner className="size-4" /> : <TrashIcon className="size-3.5" />}
-                    </button>
-                  </div>
-                ))
+                envGrants.map((g) => {
+                  const label = g.user?.name || g.user?.email || "Unknown member";
+                  return (
+                    <div key={g.id} className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className="size-6 shrink-0 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground">
+                          {label.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-sm truncate">{label}</span>
+                          {g.user?.name && g.user?.email ? (
+                            <span className="text-xs text-muted-foreground truncate">{g.user.email}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="w-36 shrink-0">
+                        <NativeSelect
+                          disabled={busyId === g.id || g.role === "admin"}
+                          value={g.role}
+                          onChange={(e) =>
+                            run(g.id, () =>
+                              updateProjectMemberRoleAction({ memberId: g.id, role: e.currentTarget.value as "read" | "write" }),
+                            )
+                          }
+                        >
+                          <option value="read">Read</option>
+                          <option value="write">Edit</option>
+                          {g.role === "admin" ? <option value="admin">Admin</option> : null}
+                        </NativeSelect>
+                      </div>
+                      <button
+                        disabled={busyId === g.id}
+                        onClick={() => run(g.id, () => removeProjectMemberAction({ memberId: g.id }))}
+                        className="shrink-0 text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40"
+                        title="Remove access"
+                      >
+                        {busyId === g.id ? <Spinner className="size-4" /> : <TrashIcon className="size-3.5" />}
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
 
