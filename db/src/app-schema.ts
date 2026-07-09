@@ -131,6 +131,14 @@ export const environment = sqliteCore.sqliteTable('environment', {
   projectId: sqliteCore.text('project_id').notNull().references(() => project.id, { onDelete: 'cascade' }),
   name: sqliteCore.text('name').notNull(),
   slug: sqliteCore.text('slug').notNull(),
+  // Env-level access controls (layered on top of per-user project_member grants).
+  // locked = read-only environment: only org/project admins may write secrets;
+  //   write/read members and ALL API tokens are blocked from mutating secrets here.
+  // visibility = 'private' hides the environment from users who only hold a
+  //   whole-project grant — they must be granted THIS environment explicitly
+  //   (an env-scoped project_member row) to see it. Admins always see/manage it.
+  locked: sqliteCore.integer('locked', { mode: 'boolean' }).notNull().default(false),
+  visibility: sqliteCore.text('visibility', { enum: ['public', 'private'] }).notNull().default('public'),
   createdAt: epochMs('created_at').notNull().$defaultFn(() => Date.now()),
   updatedAt: epochMs('updated_at').notNull().$defaultFn(() => Date.now()),
 }, (table) => [

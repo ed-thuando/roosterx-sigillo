@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { buildAbility, grantsFromMembership, tokenGrant, subject, type Grant } from './ability.ts'
+import { buildAbility, grantsFromMembership, tokenGrant, subject, isSecretWriteAction, type EnvMeta, type Grant } from './ability.ts'
 
 // Fixed ids for readability across cases.
 const PROJ_A = 'proj_a'
 const PROJ_B = 'proj_b'
 const ENV_PROD = 'env_prod'
 const ENV_DEV = 'env_dev'
+const ENV_SECRET = 'env_secret'
 
 function secret(projectId: string, environmentId: string) {
   return subject('Secret', { projectId, environmentId })
@@ -148,5 +149,94 @@ describe('merged grants', () => {
     expect(ability.can('Create', secret(PROJ_A, ENV_PROD))).toBe(false)
     // member on B: write yes
     expect(ability.can('Create', secret(PROJ_B, ENV_PROD))).toBe(true)
+  })
+})
+
+describe('isSecretWriteAction', () => {
+  it('classifies mutating actions as writes', () => {
+    expect(isSecretWriteAction('Create')).toBe(true)
+    expect(isSecretWriteAction('Edit')).toBe(true)
+    expect(isSecretWriteAction('Delete')).toBe(true)
+    expect(isSecretWriteAction('ReadValue')).toBe(false)
+    expect(isSecretWriteAction('DescribeSecret')).toBe(false)
+  })
+})
+
+// ── Env-level access controls (private / read-only environments) ──────
+// These shape a NON-admin's grants via env metadata passed to
+// grantsFromMembership. Admins bypass both controls.
+describe('private environments', () => {
+  const envs = new Map<string, EnvMeta[]>([[PROJ_A, [
+    { id: ENV_PROD, visibility: 'public', locked: false },
+    { id: ENV_SECRET, visibility: 'private', locked: false },
+  ]]])
+
+  it('hides a private env from a whole-project grant', () => {
+    const ability = buildAbility(
+      grantsFromMembership('member', [{ role: 'write', projectId: PROJ_A, environmentId: null }], envs),
+    )
+    // public env: full access
+    expect(ability.can('ReadValue', secret(PROJ_A, ENV_PROD))).toBe(true)
+    expect(ability.can('Create', secret(PROJ_A, ENV_PROD))).toBe(true)
+    expect(ability.can('Read', subject('Environment', { projectId: PROJ_A, id: ENV_PROD }))).toBe(true)
+    // private env: invisible — not even readable
+    expect(ability.can('ReadValue', secret(PROJ_A, ENV_SECRET))).toBe(false)
+    expect(ability.can('Read', subject('Environment', { projectId: PROJ_A, id: ENV_SECRET }))).toBe(false)
+  })
+
+  it('reveals a private env to an explicit env-scoped grant', () => {
+    const ability = buildAbility(
+      grantsFromMembership('member', [{ role: 'read', projectId: PROJ_A, environmentId: ENV_SECRET }], envs),
+    )
+    expect(ability.can('ReadValue', secret(PROJ_A, ENV_SECRET))).toBe(true)
+    expect(ability.can('Read', subject('Environment', { projectId: PROJ_A, id: ENV_SECRET }))).toBe(true)
+  })
+
+  it('lets an admin see private envs (bypasses visibility)', () => {
+    const ability = buildAbility(
+      grantsFromMembership('member', [{ role: 'admin', projectId: PROJ_A, environmentId: null }], envs),
+    )
+    expect(ability.can('ReadValue', secret(PROJ_A, ENV_SECRET))).toBe(true)
+    expect(ability.can('Create', secret(PROJ_A, ENV_SECRET))).toBe(true)
+  })
+})
+
+describe('read-only (locked) environments', () => {
+  const envs = new Map<string, EnvMeta[]>([[PROJ_A, [
+    { id: ENV_PROD, visibility: 'public', locked: true },
+  ]]])
+
+  it('caps a whole-project write grant to read on a locked env', () => {
+    const ability = buildAbility(
+      grantsFromMembership('member', [{ role: 'write', projectId: PROJ_A, environmentId: null }], envs),
+    )
+    expect(ability.can('ReadValue', secret(PROJ_A, ENV_PROD))).toBe(true)
+    expect(ability.can('Create', secret(PROJ_A, ENV_PROD))).toBe(false)
+    expect(ability.can('Edit', secret(PROJ_A, ENV_PROD))).toBe(false)
+    expect(ability.can('Delete', secret(PROJ_A, ENV_PROD))).toBe(false)
+  })
+
+  it('caps an explicit env-scoped write grant to read on a locked env', () => {
+    const ability = buildAbility(
+      grantsFromMembership('member', [{ role: 'write', projectId: PROJ_A, environmentId: ENV_PROD }], envs),
+    )
+    expect(ability.can('ReadValue', secret(PROJ_A, ENV_PROD))).toBe(true)
+    expect(ability.can('Create', secret(PROJ_A, ENV_PROD))).toBe(false)
+  })
+
+  it('lets an admin write to a locked env (bypasses lock)', () => {
+    const ability = buildAbility(
+      grantsFromMembership('member', [{ role: 'admin', projectId: PROJ_A, environmentId: null }], envs),
+    )
+    expect(ability.can('Create', secret(PROJ_A, ENV_PROD))).toBe(true)
+  })
+
+  it('leaves grants unchanged when a project has no private/locked envs', () => {
+    const plain = new Map<string, EnvMeta[]>([[PROJ_A, [
+      { id: ENV_PROD, visibility: 'public', locked: false },
+      { id: ENV_DEV, visibility: 'public', locked: false },
+    ]]])
+    const grants = grantsFromMembership('member', [{ role: 'write', projectId: PROJ_A, environmentId: null }], plain)
+    expect(grants).toEqual([{ role: 'project-member', projectId: PROJ_A, environmentId: undefined }])
   })
 })
