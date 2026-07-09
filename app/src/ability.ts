@@ -124,21 +124,91 @@ const PROJECT_ROLE: Record<'admin' | 'write' | 'read', Role> = {
   read: 'project-viewer',
 }
 
+// A project_member row as stored in the DB.
+export interface ProjectMemberRow {
+  role: 'admin' | 'write' | 'read'
+  projectId: string
+  environmentId: string | null
+}
+
+// Env-level access metadata used to shape grants (see grantsFromMembership).
+export interface EnvMeta {
+  id: string
+  visibility: 'public' | 'private'
+  locked: boolean
+}
+
+// The Secret actions that mutate state (as opposed to read). Used to decide
+// whether a read-only (locked) environment should block an action.
+const SECRET_WRITE_ACTIONS: ReadonlySet<Actions> = new Set(['Create', 'Edit', 'Delete'])
+export function isSecretWriteAction(action: Actions): boolean {
+  return SECRET_WRITE_ACTIONS.has(action)
+}
+
+// A locked (read-only) environment demotes a non-admin write grant to read.
+// Admin roles are never passed here, so admins keep write on locked envs.
+function capRoleForLock(role: Role, locked: boolean | undefined): Role {
+  return locked && role === 'project-member' ? 'project-viewer' : role
+}
+
 // Translate a user's org role + project_member rows into Grants.
 // Org admins get full access (org-admin) and their project rows are ignored.
 // A user with no org-admin role and no project rows gets no grants (no access).
+//
+// `envsByProject` (env metadata per project) layers the env-level controls on
+// top of the row's role, and is applied ONLY to non-admin (write/read) grants —
+// admins bypass both controls:
+//   - visibility: a whole-project grant is expanded to the PUBLIC envs only, so
+//     private envs stay hidden unless the user holds an explicit env-scoped row.
+//   - locked: any env-scoped grant landing on a locked env is capped to read.
+// When metadata is absent, or a project has no private/locked envs, the
+// whole-project grant is emitted unchanged (identical to the previous behavior).
 export function grantsFromMembership(
   orgRole: 'admin' | 'member' | null,
-  projectRows: { role: 'admin' | 'write' | 'read'; projectId: string; environmentId: string | null }[],
+  projectRows: ProjectMemberRow[],
+  envsByProject?: Map<string, EnvMeta[]>,
 ): Grant[] {
   if (orgRole === 'admin') return [{ role: 'org-admin' }]
-  return projectRows.map((r) => ({
+
+  const grants: Grant[] = []
+  for (const row of projectRows) {
     // Unknown/stale role values fall back to no-access rather than through the
     // waterfall in applyGrant (which would otherwise grant admin).
-    role: PROJECT_ROLE[r.role] ?? 'no-access',
-    projectId: r.projectId,
-    environmentId: r.environmentId ?? undefined,
-  }))
+    const role = PROJECT_ROLE[row.role] ?? 'no-access'
+    const { projectId } = row
+    const environmentId = row.environmentId ?? undefined
+
+    // no-access grants nothing; project-admin bypasses env visibility + locks.
+    if (role === 'no-access' || role === 'project-admin') {
+      grants.push({ role, projectId, environmentId })
+      continue
+    }
+
+    const envs = envsByProject?.get(projectId)
+
+    // Explicit env-scoped grant: this is how a user is let into a private env,
+    // so visibility does not apply — but a locked env still caps write to read.
+    if (environmentId) {
+      const meta = envs?.find((e) => e.id === environmentId)
+      grants.push({ role: capRoleForLock(role, meta?.locked), projectId, environmentId })
+      continue
+    }
+
+    // Whole-project grant with no private/locked envs (or no metadata): keep the
+    // single project-wide grant — unchanged behavior.
+    if (!envs || !envs.some((e) => e.visibility === 'private' || e.locked)) {
+      grants.push({ role, projectId, environmentId: undefined })
+      continue
+    }
+
+    // Expand to the public envs only (private ones stay hidden from a
+    // whole-project grant), capping locked envs to read.
+    for (const e of envs) {
+      if (e.visibility === 'private') continue
+      grants.push({ role: capRoleForLock(role, e.locked), projectId, environmentId: e.id })
+    }
+  }
+  return grants
 }
 
 // ── Read helpers ────────────────────────────────────────────────────

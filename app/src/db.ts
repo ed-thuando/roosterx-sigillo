@@ -15,7 +15,7 @@ import { genericOAuth, deviceAuthorization, bearer } from 'better-auth/plugins'
 import { drizzleAdapter } from 'better-auth-drizzle-adapter'
 import { redirect } from 'spiceflow'
 import { memoize } from './lib/memoize.ts'
-import { buildAbility, grantsFromMembership, tokenGrant, subject, type AppAbility, type SecretAction } from './ability.ts'
+import { buildAbility, grantsFromMembership, tokenGrant, subject, isSecretWriteAction, type AppAbility, type SecretAction, type EnvMeta } from './ability.ts'
 
 // ── Drizzle client via D1 ───────────────────────────────────────────
 export { getDb }
@@ -350,6 +350,8 @@ type ResolvedEnvironment = {
   projectId: string
   name: string
   slug: string
+  locked: boolean
+  visibility: 'public' | 'private'
   createdAt: number
   updatedAt: number
   orgId: string | null
@@ -408,15 +410,43 @@ const lookupProjectGrants = memoize({
   },
 })
 
+// Env-level access metadata (visibility + lock) for every environment in an
+// org's projects, grouped by projectId. Feeds grantsFromMembership so a user's
+// grants respect private/read-only environments. Fetched only for non-admins
+// (org-admins bypass these controls).
+const lookupEnvMetaByProject = memoize({
+  namespace: 'env-meta',
+  fn: async (orgId: string): Promise<Map<string, EnvMeta[]>> => {
+    const db = getDb()
+    const rows = await db.query.environment.findMany({
+      columns: { id: true, projectId: true, visibility: true, locked: true },
+      with: { project: { columns: { orgId: true } } },
+    })
+    const byProject = new Map<string, EnvMeta[]>()
+    for (const r of rows) {
+      if (r.project?.orgId !== orgId) continue
+      const list = byProject.get(r.projectId) ?? []
+      list.push({ id: r.id, visibility: r.visibility, locked: r.locked })
+      byProject.set(r.projectId, list)
+    }
+    return byProject
+  },
+})
+
 // Build the ability for a user within one org. Org admins get full access;
-// everyone else gets exactly what their project_member rows grant. A non-member
-// (or member with no project rows) gets an empty ability (no access).
+// everyone else gets exactly what their project_member rows grant, shaped by
+// each environment's visibility/lock. A non-member (or member with no project
+// rows) gets an empty ability (no access).
 export async function getUserAbility(userId: string, orgId: string): Promise<AppAbility> {
   const member = await lookupOrgMember(userId, orgId)
   if (!member) return buildAbility([])
   const orgRole = member.role === 'admin' ? 'admin' : 'member'
-  const projectRows = orgRole === 'admin' ? [] : await lookupProjectGrants(userId, orgId)
-  return buildAbility(grantsFromMembership(orgRole, projectRows))
+  if (orgRole === 'admin') return buildAbility(grantsFromMembership('admin', []))
+  const [projectRows, envsByProject] = await Promise.all([
+    lookupProjectGrants(userId, orgId),
+    lookupEnvMetaByProject(orgId),
+  ])
+  return buildAbility(grantsFromMembership(orgRole, projectRows, envsByProject))
 }
 
 // Ability-based authorization checks. `check` receives the user's compiled
@@ -653,6 +683,12 @@ export async function requireSecretsApiAuth(
     // If token is scoped to a specific environment, enforce it
     if (token.environmentId && token.environmentId !== env.id) {
       throw forbiddenResponse('token is scoped to a different environment')
+    }
+
+    // Locked (read-only) environments reject ALL token writes — tokens are
+    // never admins, so no automated process can mutate a locked env's secrets.
+    if (env.locked && isSecretWriteAction(action)) {
+      throw forbiddenResponse('environment is read-only')
     }
 
     const ability = getTokenAbility(token)

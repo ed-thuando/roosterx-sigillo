@@ -218,6 +218,29 @@ export async function renameEnvAction({ id, name, slug }: {
   return { id }
 }
 
+// Toggle an environment's access controls (see app-schema.ts):
+//   locked     — read-only environment (only admins may write secrets)
+//   visibility — 'private' hides the env from whole-project grants
+// Only project-admins (or org-admins) may change these, matching env management.
+export async function setEnvAccessAction({ id, locked, visibility }: {
+  id: string
+  locked?: boolean
+  visibility?: 'public' | 'private'
+}) {
+  if (locked === undefined && visibility === undefined) throw new Error('Nothing to update')
+  const session = await requireSession()
+  const orgId = await getOrgIdForEnvironment(id)
+  if (!orgId) throw new Error('Environment not found')
+  const projectId = await getProjectIdForEnvironment(id)
+  await requireCan(session.userId, orgId, (a) => a.can('Edit', subject('Environment', { projectId: projectId! })))
+  const db = getDb()
+  const updates: Partial<{ locked: boolean; visibility: 'public' | 'private'; updatedAt: number }> = { updatedAt: Date.now() }
+  if (locked !== undefined) updates.locked = locked
+  if (visibility !== undefined) updates.visibility = visibility
+  await db.update(schema.environment).set(updates).where(orm.eq(schema.environment.id, id))
+  return { id }
+}
+
 const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 export async function createInviteAction({ orgId }: { orgId: string }) {

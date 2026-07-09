@@ -10,7 +10,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { PencilIcon, TrashIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, LockIcon, LockOpenIcon, PencilIcon, TrashIcon } from "lucide-react";
 import { useState, useRef } from "react";
 import { z } from "zod";
 import { parseFormData } from "spiceflow";
@@ -21,7 +21,7 @@ import { Button } from "sigillo-app/src/components/ui/button";
 import { Frame } from "sigillo-app/src/components/ui/frame";
 import { Input } from "sigillo-app/src/components/ui/input";
 import { formatTime } from "sigillo-app/src/lib/utils";
-import { createEnvAction, deleteEnvAction, renameEnvAction } from "../actions.ts";
+import { createEnvAction, deleteEnvAction, renameEnvAction, setEnvAccessAction } from "../actions.ts";
 import {
   Table,
   TableBody,
@@ -35,6 +35,8 @@ type Environment = {
   id: string;
   name: string;
   slug: string;
+  locked: boolean;
+  visibility: "public" | "private";
   createdAt: number;
   updatedAt: number;
 };
@@ -153,6 +155,72 @@ function EditableEnvCell({ env, field, canWrite }: { env: Environment; field: "n
   );
 }
 
+// Lock (read-only) + visibility (private) controls for one environment.
+// Admins get toggle buttons; everyone else sees read-only badges.
+function EnvAccessCell({ env, canManage }: { env: Environment; canManage: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const locked = env.locked;
+  const isPrivate = env.visibility === "private";
+
+  const update = async (patch: { locked?: boolean; visibility?: "public" | "private" }) => {
+    setBusy(true);
+    try {
+      await setEnvAccessAction({ id: env.id, ...patch });
+    } catch (e: any) {
+      alert(e?.message || "Failed to update access");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!canManage) {
+    if (!locked && !isPrivate) return <span className="text-muted-foreground text-xs">—</span>;
+    return (
+      <span className="flex items-center gap-1.5">
+        {locked && (
+          <Badge variant="outline" size="default">
+            <LockIcon className="size-3 mr-1" />
+            Read-only
+          </Badge>
+        )}
+        {isPrivate && (
+          <Badge variant="outline" size="default">
+            <EyeOffIcon className="size-3 mr-1" />
+            Private
+          </Badge>
+        )}
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-1">
+      <button
+        disabled={busy}
+        onClick={() => update({ locked: !locked })}
+        title={locked ? "Read-only. Click to allow writes." : "Writable. Click to make read-only."}
+        className={cn(
+          "cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
+          locked ? "text-destructive" : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {locked ? <LockIcon className="size-3.5" /> : <LockOpenIcon className="size-3.5" />}
+      </button>
+      <button
+        disabled={busy}
+        onClick={() => update({ visibility: isPrivate ? "public" : "private" })}
+        title={isPrivate ? "Private. Click to make visible to all project members." : "Visible to project. Click to make private."}
+        className={cn(
+          "cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
+          isPrivate ? "text-amber-500" : "text-muted-foreground hover:text-foreground",
+        )}
+      >
+        {isPrivate ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
+      </button>
+    </span>
+  );
+}
+
 const envSchema = z.object({ name: z.string().min(1, "Name is required"), slug: z.string().min(1, "Slug is required") });
 const envFields = envSchema.keyof().enum;
 
@@ -205,6 +273,12 @@ export function EnvironmentsTable() {
           {formatTime(row.original.createdAt)}
         </span>
       ),
+    },
+    {
+      id: "access",
+      header: "Access",
+      size: 110,
+      cell: ({ row }) => <EnvAccessCell env={row.original} canManage={canWriteEnv} />,
     },
     {
       id: "actions",
