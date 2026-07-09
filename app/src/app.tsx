@@ -200,27 +200,24 @@ export const app = new Spiceflow()
     const { Sidebar, MobileDrawer } = await import('sigillo-app/src/components/sidebar')
     const projectId = loaderData.projectId
     return (
-      <>
-        {projectId && (
-          <>
-            <TabBar
-              projectId={projectId}
-              pathname={loaderData.pathname}
-              firstEnvSlug={loaderData.currentProjectFirstEnvSlug}
-            />
-            <div className="border-t border-border" />
-          </>
-        )}
-        <div className="isolate grow relative flex max-w-(--content-max-width) mx-auto w-full border-x border-border">
-          <GridDot position="tl" />
-          <GridDot position="tr" />
-          <Sidebar />
-          <MobileDrawer />
-          <main className="flex-1 p-4 sm:p-6 overflow-x-hidden overflow-y-auto min-w-0">
-            {children}
-          </main>
-        </div>
-      </>
+      <div className="isolate grow relative flex max-w-(--content-max-width) mx-auto w-full border-x border-border">
+        <GridDot position="tl" />
+        <GridDot position="tr" />
+        <Sidebar />
+        <MobileDrawer />
+        <main className="flex-1 p-4 sm:p-6 overflow-x-hidden overflow-y-auto min-w-0">
+          {projectId && (
+            <div className="sticky top-0 z-30 -mx-4 mb-5 border-b border-border bg-background px-4 pt-4 pb-3 sm:-mx-6 sm:px-6">
+              <TabBar
+                projectId={projectId}
+                pathname={loaderData.pathname}
+                firstEnvSlug={loaderData.currentProjectFirstEnvSlug}
+              />
+            </div>
+          )}
+          {children}
+        </main>
+      </div>
     )
   })
 
@@ -408,48 +405,15 @@ export const app = new Spiceflow()
     return <ProjectPage key={loaderData.selectedEnvId ?? 'none'} />
   })
 
-  .loader('/dash/projects/:projectId/environments', async ({ params, request, redirect }) => {
-    const db = getDb()
-    const { projectId } = params
-    const session = await requirePageSession(request)
-    const orgId = await getOrgIdForProject(projectId)
-    if (!orgId) throw redirect('/')
-    await requirePageOrgMember(session.userId, orgId)
-    const ability = await requirePageCan(session.userId, orgId, (a) => canReadProject(a, projectId))
-    // Only project-admins (or org-admins) may create/edit/delete environments.
-    const canWriteEnv = ability.can('Create', subject('Environment', { projectId }))
-    // Same bar governs sharing (adding per-env access grants).
-    const canManageProjectMembers = ability.can('Create', subject('ProjectMember', { projectId }))
-
-    // Data for the per-environment "Share" control: org members to pick from and
-    // the project's existing grants (to show/edit who already has access).
-    // Only fetched for managers — regular viewers can't share.
-    const members = canManageProjectMembers
-      ? await db.query.orgMember.findMany({
-          where: { orgId },
-          with: { user: { columns: { id: true, name: true, email: true, image: true } } },
-          orderBy: { createdAt: 'asc' },
-        })
-      : []
-    const projectMembers = canManageProjectMembers
-      ? await db.query.projectMember.findMany({
-          where: { projectId },
-          with: { user: { columns: { id: true, name: true, email: true, image: true } } },
-          orderBy: { createdAt: 'asc' },
-        })
-      : []
-
-    return { projectId, canWriteEnv, canManageProjectMembers, members, projectMembers }
+    .loader('/dash/projects/:projectId/environments', async ({ params, redirect }) => {
+    throw redirect(`/dash/projects/${params.projectId}/access`)
   })
 
   .page('/dash/projects/:projectId/environments', async () => {
-    const { EnvironmentsPage } = await import('sigillo-app/src/components/environments-table')
-
-    return <EnvironmentsPage />
+    return <></>
   })
 
-  // ── Access page ────────────────────────────────────────────────
-  .loader('/dash/projects/:projectId/access', async ({ params, request, redirect }) => {
+.loader('/dash/projects/:projectId/access', async ({ params, request, redirect }) => {
     const db = getDb()
     const { projectId } = params
     const session = await requirePageSession(request)
@@ -475,10 +439,11 @@ export const app = new Spiceflow()
     })
     const environments = await db.query.environment.findMany({
       where: { projectId },
-      columns: { id: true, name: true, slug: true },
+      columns: { id: true, name: true, slug: true, locked: true, visibility: true },
       orderBy: { createdAt: 'asc' },
     })
     const canManageProjectMembers = ability.can('Create', subject('ProjectMember', { projectId }))
+    const canWriteEnv = ability.can('Create', subject('Environment', { projectId }))
 
     return {
       orgId,
@@ -489,6 +454,7 @@ export const app = new Spiceflow()
       projectMembers,
       environments,
       canManageProjectMembers,
+      canWriteEnv,
     }
   })
 
@@ -798,7 +764,8 @@ function TabBar({
   firstEnvSlug: string | null
 }) {
   const base = `/dash/projects/${projectId}`
-  const envMatch = pathname.match(new RegExp(`^${base}/envs/([^/]+)`))
+  const safePath = pathname ?? ""
+  const envMatch = safePath.match(new RegExp(`^${base}/envs/([^/]+)`))
   const envSlug = envMatch?.[1] ?? firstEnvSlug
   const secretsHref = envSlug
     ? router.href('/dash/projects/:projectId/envs/:envSlug', { projectId, envSlug })
@@ -807,14 +774,13 @@ function TabBar({
     ? router.href('/dash/projects/:projectId/envs/:envSlug/event-log', { projectId, envSlug })
     : router.href('/dash/projects/:projectId/event-log', { projectId })
   const tabs = [
-    { label: 'Secrets', href: secretsHref, active: pathname === base || (pathname.startsWith(`${base}/envs`) && !pathname.endsWith('/event-log')) },
-    { label: 'Environments', href: router.href('/dash/projects/:projectId/environments', { projectId }), active: pathname === `${base}/environments` },
+    { label: 'Secrets', href: secretsHref, active: safePath === base || (safePath.startsWith(`${base}/envs`) && !safePath.endsWith('/event-log')) },
     { label: 'Tokens', href: router.href('/dash/projects/:projectId/tokens', { projectId }), active: pathname === `${base}/tokens` },
     { label: 'Access', href: router.href('/dash/projects/:projectId/access', { projectId }), active: pathname === `${base}/access` },
     {
       label: 'Event Log',
       href: eventLogHref,
-      active: pathname === `${base}/event-log` || pathname.endsWith('/event-log'),
+      active: safePath === `${base}/event-log` || safePath.endsWith('/event-log'),
     },
     { label: 'Settings', href: router.href('/dash/projects/:projectId/settings', { projectId }), active: pathname === `${base}/settings` },
   ] as const

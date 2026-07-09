@@ -1,13 +1,19 @@
-// Access table for organization members.
-// Admins can change roles inline and remove members from the org.
-
+// Access matrix: org members down the side, the project's environments across
+// the top, each cell a single None / Read / Write dropdown. Org-admins (and the
+// whole-project owner) render as greyed "Full" — the admin bypass is shown, not
+// a silent surprise. Environment management lives in the column headers.
 "use client"
 
 import { useState } from "react"
-import { TrashIcon } from "lucide-react"
+import { MoreVerticalIcon, PlusIcon, LockIcon, EyeOffIcon } from "lucide-react"
 import {
-  removeOrgMemberAction, updateOrgMemberRoleAction,
-  addProjectMemberAction, updateProjectMemberRoleAction, removeProjectMemberAction,
+  updateOrgMemberRoleAction,
+  addProjectMemberAction,
+  removeProjectMemberAction,
+  setEnvAccessAction,
+  createEnvAction,
+  renameEnvAction,
+  deleteEnvAction,
 } from "sigillo-app/src/actions"
 import { InviteButton } from "sigillo-app/src/components/invite-dialog"
 import { Button } from "sigillo-app/src/components/ui/button"
@@ -18,7 +24,16 @@ import { useLoaderData } from "spiceflow/react"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "sigillo-app/src/components/ui/table"
-import { formatTime } from "sigillo-app/src/lib/utils"
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuPopup,
+  DropdownMenuItem, DropdownMenuSeparator,
+} from "sigillo-app/src/components/ui/dropdown-menu"
+import {
+  Dialog, DialogPopup, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter, DialogClose,
+} from "sigillo-app/src/components/ui/dialog"
+import { Input } from "sigillo-app/src/components/ui/input"
+import { cn } from "sigillo-app/src/lib/utils"
 
 type Member = {
   id: string
@@ -32,406 +47,425 @@ type Member = {
   } | null
 }
 
-export function AccessPage() {
-  const { projectName, orgId, role } = useLoaderData('/dash/projects/:projectId/access')
-
-  return (
-    <div className="flex flex-col gap-3 w-full">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">{projectName}</h1>
-        {role === 'admin' ? <InviteButton orgId={orgId} /> : null}
-      </div>
-      <AccessTable />
-      <div className="mt-8 flex flex-col gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Project access</h2>
-          <p className="text-sm text-muted-foreground">
-            Grant org members access to this project, scoped to all environments or a single one.
-            Org admins always have full access.
-          </p>
-        </div>
-        <ProjectAccessTable />
-      </div>
-    </div>
-  )
-}
-
-type ProjectRole = "admin" | "write" | "read"
-
 type ProjectGrant = {
   id: string
   createdAt: number
-  role: ProjectRole
-  environmentId: string | null
+  role: "admin" | "write" | "read"
   user: { id: string; email: string | null; image: string | null; name: string | null } | null
   environment: { id: string; name: string; slug: string } | null
 }
 
-export function ProjectAccessTable() {
-  const { projectId, members, projectMembers, environments, canManageProjectMembers } =
-    useLoaderData('/dash/projects/:projectId/access')
-  const [pendingRoleId, setPendingRoleId] = useState<string | null>(null)
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+type Environment = {
+  id: string
+  name: string
+  slug: string
+  locked: boolean
+  visibility: string
+}
 
-  // Add-grant form state
-  const [addUserId, setAddUserId] = useState("")
-  const [addEnvId, setAddEnvId] = useState("")
-  const [addRole, setAddRole] = useState<ProjectRole>("read")
-  const [adding, setAdding] = useState(false)
+type CellValue = "none" | "read" | "write"
 
-  const grants = projectMembers as ProjectGrant[]
+export function AccessPage() {
+  const {
+    projectId, orgId, role, currentUserId, members, projectMembers,
+    environments, canManageProjectMembers, canWriteEnv,
+  } = useLoaderData('/dash/projects/:projectId/access')
 
-  function saveRole(grant: ProjectGrant, nextRole: ProjectRole) {
-    if (nextRole === grant.role) return
-    setError(null)
-    setPendingRoleId(grant.id)
-    void (async () => {
-      try {
-        await updateProjectMemberRoleAction({ memberId: grant.id, role: nextRole })
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to update role")
-      } finally {
-        setPendingRoleId((c) => (c === grant.id ? null : c))
-      }
-    })()
-  }
-
-  function removeGrant(grant: ProjectGrant) {
-    const name = grant.user?.name || grant.user?.email || "this user"
-    const scope = grant.environment ? grant.environment.name : "all environments"
-    if (!confirm(`Remove ${name}'s access to ${scope}?`)) return
-    setError(null)
-    setPendingDeleteId(grant.id)
-    void (async () => {
-      try {
-        await removeProjectMemberAction({ memberId: grant.id })
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to remove grant")
-      } finally {
-        setPendingDeleteId((c) => (c === grant.id ? null : c))
-      }
-    })()
-  }
-
-  function addGrant() {
-    if (!addUserId) {
-      setError("Select a user")
-      return
-    }
-    setError(null)
-    setAdding(true)
-    void (async () => {
-      try {
-        await addProjectMemberAction({
-          projectId,
-          userId: addUserId,
-          environmentId: addEnvId || null,
-          role: addRole,
-        })
-        setAddUserId("")
-        setAddEnvId("")
-        setAddRole("read")
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to add grant")
-      } finally {
-        setAdding(false)
-      }
-    })()
+  if (!canManageProjectMembers) {
+    return (
+      <Frame className="w-full">
+        <h2 className="text-lg font-semibold tracking-tight">Project access</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Only project managers can change who has access. Contact an admin to
+          grant or revoke access to this project.
+        </p>
+      </Frame>
+    )
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      {canManageProjectMembers ? (
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground">User</label>
-            <NativeSelect value={addUserId} onChange={(e) => setAddUserId(e.currentTarget.value)}>
-              <option value="">Select a member…</option>
-              {members.map((m) => (
-                <option key={m.user?.id} value={m.user?.id ?? ""}>
-                  {m.user?.name || m.user?.email || m.user?.id}
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground">Scope</label>
-            <NativeSelect value={addEnvId} onChange={(e) => setAddEnvId(e.currentTarget.value)}>
-              <option value="">All environments</option>
-              {environments.map((env) => (
-                <option key={env.id} value={env.id}>{env.name}</option>
-              ))}
-            </NativeSelect>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground">Role</label>
-            <NativeSelect value={addRole} onChange={(e) => setAddRole(e.currentTarget.value as ProjectRole)}>
-              <option value="read">Read</option>
-              <option value="write">Write</option>
-              <option value="admin">Admin</option>
-            </NativeSelect>
-          </div>
-          <Button size="sm" loading={adding} onClick={addGrant}>Add access</Button>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Project access</h2>
+          <p className="text-sm text-muted-foreground">
+            Members down the side, environments across the top. Each cell is a
+            single None / Read / Write grant. Org admins always have full access.
+          </p>
         </div>
-      ) : null}
-
-      <Frame className="w-full">
-        <Table className="table-fixed">
-          <colgroup>
-            <col className="w-1/4" />
-            <col className="w-1/4" />
-            <col className="w-32" />
-            <col className="w-32" />
-            <col className="w-28" />
-            {canManageProjectMembers ? <col className="w-16" /> : null}
-          </colgroup>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Scope</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Granted</TableHead>
-              {canManageProjectMembers ? <TableHead /> : null}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {grants.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={canManageProjectMembers ? 6 : 5}>
-                  <span className="text-sm text-muted-foreground">No project-level grants yet.</span>
-                </TableCell>
-              </TableRow>
-            ) : null}
-            {grants.map((grant) => {
-              const isSavingRole = pendingRoleId === grant.id
-              const isDeleting = pendingDeleteId === grant.id
-              const isBusy = isSavingRole || isDeleting
-              return (
-                <TableRow key={grant.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {grant.user?.image ? (
-                        <img src={grant.user.image} alt="" className="size-6 rounded-full object-cover" />
-                      ) : (
-                        <div className="size-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground">
-                          {(grant.user?.name || grant.user?.email || "?").charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <span className="text-sm font-medium">{grant.user?.name || "—"}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm text-muted-foreground">{grant.user?.email || "—"}</span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm">{grant.environment ? grant.environment.name : "All environments"}</span>
-                  </TableCell>
-                  <TableCell>
-                    {canManageProjectMembers ? (
-                      <div className="relative w-full">
-                        <NativeSelect
-                          disabled={isBusy}
-                          value={grant.role}
-                          onChange={(e) => saveRole(grant, e.currentTarget.value as ProjectRole)}
-                        >
-                          <option value="read">Read</option>
-                          <option value="write">Write</option>
-                          <option value="admin">Admin</option>
-                        </NativeSelect>
-                        {isSavingRole ? (
-                          <Spinner className="absolute right-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                        ) : null}
-                      </div>
-                    ) : (
-                      <span className="text-xs font-medium capitalize">{grant.role}</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-muted-foreground text-xs tabular-nums">{formatTime(grant.createdAt)}</span>
-                  </TableCell>
-                  {canManageProjectMembers ? (
-                    <TableCell className="p-0">
-                      <Button
-                        aria-label="Remove access"
-                        disabled={isBusy}
-                        loading={isDeleting}
-                        size="icon-xs"
-                        title="Remove access"
-                        variant="ghost"
-                        onClick={() => removeGrant(grant)}
-                      >
-                        <TrashIcon className="size-3.5 text-muted-foreground" />
-                      </Button>
-                    </TableCell>
-                  ) : null}
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </Frame>
+        <InviteButton orgId={orgId} />
+      </div>
+      <AccessMatrix
+        projectId={projectId}
+        currentUserId={currentUserId}
+        isOrgAdmin={role === 'admin'}
+        members={members}
+        projectMembers={projectMembers}
+        environments={environments}
+        canWriteEnv={canWriteEnv}
+      />
     </div>
   )
 }
 
-export function AccessTable() {
-  const { role, currentUserId, members } = useLoaderData('/dash/projects/:projectId/access')
-  const canManage = role === 'admin'
-  const [roleOverrides, setRoleOverrides] = useState<Record<string, Member["role"]>>({})
-  const [pendingRoleId, setPendingRoleId] = useState<string | null>(null)
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+function initialsFor(name: string | null, email: string | null): string {
+  const base = (name || email || "?").trim()
+  return base.slice(0, 2).toUpperCase() || "?"
+}
+
+function AccessMatrix({
+  projectId, currentUserId, isOrgAdmin, members, projectMembers, environments, canWriteEnv,
+}: {
+  projectId: string
+  currentUserId: string
+  isOrgAdmin: boolean
+  members: Member[]
+  projectMembers: ProjectGrant[]
+  environments: Environment[]
+  canWriteEnv: boolean
+}) {
   const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState<string | null>(null)
+  const [dialog, setDialog] = useState<
+    { type: "rename" | "delete"; env: Environment } | { type: "add" } | null
+  >(null)
 
-  function getRole(member: Member) {
-    return roleOverrides[member.id] ?? member.role
-  }
-
-  const adminCount = members.reduce((count, member) => {
-    return count + (getRole(member) === "admin" ? 1 : 0)
-  }, 0)
-
-  function saveRole(member: Member, nextRole: Member["role"]) {
-    const previousRole = getRole(member)
+  async function setCell(userId: string | undefined, envId: string, grantId: string | undefined, value: CellValue) {
+    if (!userId) return
+    const key = `${userId}:${envId}`
+    setPending(key)
     setError(null)
-    setRoleOverrides((current) => ({ ...current, [member.id]: nextRole }))
-    setPendingRoleId(member.id)
-    void (async () => {
-      try {
-        await updateOrgMemberRoleAction({ memberId: member.id, role: nextRole })
-      } catch (error) {
-        setRoleOverrides((current) => ({ ...current, [member.id]: previousRole }))
-        setError(error instanceof Error ? error.message : "Failed to update role")
-      } finally {
-        setPendingRoleId((current) => (current === member.id ? null : current))
+    try {
+      if (value === "none") {
+        if (grantId) await removeProjectMemberAction({ memberId: grantId })
+      } else {
+        await addProjectMemberAction({ projectId, userId, environmentId: envId, role: value })
       }
-    })
-  }
-
-  function removeMember(member: Member) {
-    const name = member.user?.name || member.user?.email || "this user"
-    if (!confirm(`Remove ${name} from this organization?`)) {
-      return
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update access")
+    } finally {
+      setPending(null)
     }
+  }
 
+  async function setOrgRole(memberId: string, newRole: "admin" | "member") {
+    setPending(`org:${memberId}`)
     setError(null)
-    setPendingDeleteId(member.id)
-    void (async () => {
-      try {
-        await removeOrgMemberAction({ memberId: member.id })
-      } catch (error) {
-        setError(error instanceof Error ? error.message : "Failed to remove user")
-      } finally {
-        setPendingDeleteId((current) => (current === member.id ? null : current))
-      }
-    })
+    try {
+      await updateOrgMemberRoleAction({ memberId, role: newRole })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update role")
+    } finally {
+      setPending(null)
+    }
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <Frame className="w-full">
-        <Table className="table-fixed">
-          <colgroup>
-            <col className="w-1/4" />
-            <col className="w-1/3" />
-            <col className="w-36" />
-            <col className="w-32" />
-            {canManage ? <col className="w-16" /> : null}
-          </colgroup>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Joined</TableHead>
-              {canManage ? <TableHead /> : null}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {members.map((member) => {
-              const currentRole = getRole(member)
-              const isSavingRole = pendingRoleId === member.id
-              const isDeleting = pendingDeleteId === member.id
-              const isBusy = isSavingRole || isDeleting
-              const isCurrentUser = member.user?.id === currentUserId
-              const isLastAdmin = currentRole === "admin" && adminCount === 1
-
-              return (
-                <TableRow key={member.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {member.user?.image ? (
-                        <img src={member.user.image} alt="" className="size-6 rounded-full object-cover" />
-                      ) : (
-                        <div className="size-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground">
-                          {(member.user?.name || member.user?.email || "?").charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <span className="text-sm font-medium">{member.user?.name || "—"}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm text-muted-foreground">{member.user?.email || "—"}</span>
-                  </TableCell>
-                  <TableCell>
-                    {canManage ? (
-                      <div className="relative w-full">
+    <Frame className="w-full overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="min-w-48">Member</TableHead>
+            <TableHead className="w-32">Org role</TableHead>
+            {environments.map((env) => (
+              <TableHead key={env.id} className="min-w-40">
+                <EnvHeader
+                  env={env}
+                  canWriteEnv={canWriteEnv}
+                  onRename={() => setDialog({ type: "rename", env })}
+                  onDelete={() => setDialog({ type: "delete", env })}
+                />
+              </TableHead>
+            ))}
+            {canWriteEnv ? (
+              <TableHead>
+                <Button variant="outline" size="sm" onClick={() => setDialog({ type: "add" })}>
+                  <PlusIcon className="size-4" /> Env
+                </Button>
+              </TableHead>
+            ) : null}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {members.map((member) => {
+            const userId = member.user?.id
+            const isFull = member.role === "admin"
+            return (
+              <TableRow key={member.id}>
+                <TableCell>
+                  <MemberCell member={member} currentUserId={currentUserId} />
+                </TableCell>
+                <TableCell>
+                  {isOrgAdmin ? (
+                    <NativeSelect
+                      value={member.role}
+                      disabled={pending === `org:${member.id}`}
+                      onChange={(e) => setOrgRole(member.id, e.currentTarget.value as "admin" | "member")}
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="member">Member</option>
+                    </NativeSelect>
+                  ) : (
+                    <span className="text-sm capitalize text-muted-foreground">{member.role}</span>
+                  )}
+                </TableCell>
+                {environments.map((env) => {
+                  const grant = projectMembers.find(
+                    (g) => g.user?.id === userId && g.environment?.id === env.id,
+                  )
+                  if (isFull) {
+                    return (
+                      <TableCell key={env.id} className="text-sm text-muted-foreground">
+                        Full
+                      </TableCell>
+                    )
+                  }
+                  const value: CellValue = grant
+                    ? grant.role === "admin" ? "write"
+                    : (grant.role as CellValue)
+                    : "none"
+                  const key = `${userId}:${env.id}`
+                  return (
+                    <TableCell key={env.id}>
+                      <div className="relative">
                         <NativeSelect
-                          disabled={isBusy}
-                          value={currentRole}
-                          onChange={(event) => {
-                            const nextRole = event.currentTarget.value as Member["role"]
-                            if (nextRole === currentRole) {
-                              return
-                            }
-                            saveRole(member, nextRole)
-                          }}
+                          value={value}
+                          disabled={pending === key}
+                          onChange={(e) => setCell(userId, env.id, grant?.id, e.currentTarget.value as CellValue)}
                         >
-                          <option value="admin">Admin</option>
-                          <option disabled={isLastAdmin} value="member">Member</option>
+                          <option value="none">None</option>
+                          <option value="read">Read</option>
+                          <option value="write" disabled={env.locked}>Write</option>
                         </NativeSelect>
-                        {isSavingRole ? (
-                          <Spinner className="absolute right-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        {pending === key ? (
+                          <Spinner className="absolute right-7 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                         ) : null}
                       </div>
-                    ) : (
-                      <span className="text-xs font-medium capitalize">{member.role}</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-muted-foreground text-xs tabular-nums">
-                      {formatTime(member.createdAt)}
-                    </span>
-                  </TableCell>
-                  {canManage ? (
-                    <TableCell className="p-0">
-                      <Button
-                        aria-label={isCurrentUser ? "Remove yourself" : "Remove user"}
-                        disabled={isBusy || isLastAdmin}
-                        loading={isDeleting}
-                        size="icon-xs"
-                        title={isLastAdmin
-                          ? "This organization needs at least one admin"
-                          : isCurrentUser
-                            ? "Remove yourself"
-                            : "Remove user"}
-                        variant="ghost"
-                        onClick={() => removeMember(member)}
-                      >
-                        <TrashIcon className="size-3.5 text-muted-foreground" />
-                      </Button>
                     </TableCell>
-                  ) : null}
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </Frame>
+                  )
+                })}
+                {canWriteEnv ? <TableCell /> : null}
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+      {error ? <p className="mt-2 text-sm text-destructive">{error}</p> : null}
+      {dialog?.type === "rename" && dialog.env ? (
+        <RenameEnvDialog env={dialog.env} onClose={() => setDialog(null)} />
+      ) : null}
+      {dialog?.type === "delete" && dialog.env ? (
+        <DeleteEnvDialog env={dialog.env} onClose={() => setDialog(null)} />
+      ) : null}
+      {dialog?.type === "add" ? (
+        <AddEnvDialog projectId={projectId} onClose={() => setDialog(null)} />
+      ) : null}
+    </Frame>
+  )
+}
+
+function MemberCell({ member, currentUserId }: { member: Member; currentUserId: string }) {
+  const u = member.user
+  const isYou = u?.id === currentUserId
+  return (
+    <div className="flex items-center gap-2">
+      {u?.image ? (
+        <img src={u.image} alt="" className="size-6 rounded-full object-cover" />
+      ) : (
+        <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
+          {initialsFor(u?.name ?? null, u?.email ?? null)}
+        </span>
+      )}
+      <span className="text-sm font-medium">
+        {u?.name || u?.email || "Unknown"}
+        {isYou ? " (you)" : ""}
+      </span>
     </div>
+  )
+}
+
+function EnvHeader({
+  env, canWriteEnv, onRename, onDelete,
+}: {
+  env: Environment
+  canWriteEnv: boolean
+  onRename: () => void
+  onDelete: () => void
+}) {
+  async function toggleLock() {
+    try {
+      await setEnvAccessAction({ id: env.id, locked: !env.locked })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to update environment")
+    }
+  }
+
+  async function togglePrivate() {
+    try {
+      await setEnvAccessAction({
+        id: env.id,
+        visibility: env.visibility === "private" ? "public" : "private",
+      })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to update environment")
+    }
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-1">
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium">{env.name}</span>
+          {env.locked ? <LockIcon className="size-3.5 text-muted-foreground" /> : null}
+          {env.visibility === "private" ? <EyeOffIcon className="size-3.5 text-muted-foreground" /> : null}
+        </div>
+        <span className="mono-sm text-xs text-muted-foreground">{env.slug}</span>
+      </div>
+      {canWriteEnv ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="flex size-7 items-center justify-center rounded-md hover:bg-accent"
+            aria-label={`Manage ${env.name}`}
+          >
+            <MoreVerticalIcon className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuPopup side="bottom" align="end">
+            <DropdownMenuItem onClick={onRename}>Rename</DropdownMenuItem>
+            <DropdownMenuItem onClick={toggleLock}>
+              {env.locked ? "Allow writes" : "Make read-only"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={togglePrivate}>
+              {env.visibility === "private" ? "Make public" : "Make private"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onDelete}>Delete</DropdownMenuItem>
+          </DropdownMenuPopup>
+        </DropdownMenu>
+      ) : null}
+    </div>
+  )
+}
+
+function EnvDialogShell({
+  title, description, onClose, children,
+}: {
+  title: string
+  description: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {children}
+      </DialogPopup>
+    </Dialog>
+  )
+}
+
+function RenameEnvDialog({ env, onClose }: { env: Environment; onClose: () => void }) {
+  const [name, setName] = useState(env.name)
+  const [slug, setSlug] = useState(env.slug)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function save() {
+    setBusy(true)
+    setError(null)
+    try {
+      await renameEnvAction({ id: env.id, name, slug })
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to rename environment")
+      setBusy(false)
+    }
+  }
+  return (
+    <EnvDialogShell title="Rename environment" description="Update the name and slug for this environment." onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          Name
+          <Input value={name} onChange={(e) => setName(e.currentTarget.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          Slug
+          <Input value={slug} onChange={(e) => setSlug(e.currentTarget.value)} className="mono-sm" />
+        </label>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      </div>
+      <DialogFooter variant="bare" className="mt-4">
+        <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+        <Button loading={busy} onClick={save}>Save</Button>
+      </DialogFooter>
+    </EnvDialogShell>
+  )
+}
+
+function AddEnvDialog({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const [name, setName] = useState("")
+  const [slug, setSlug] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function save() {
+    setBusy(true)
+    setError(null)
+    try {
+      await createEnvAction({ name, slug, projectId })
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create environment")
+      setBusy(false)
+    }
+  }
+  return (
+    <EnvDialogShell title="Add environment" description="Create a new environment for this project." onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          Name
+          <Input value={name} onChange={(e) => setName(e.currentTarget.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          Slug
+          <Input value={slug} onChange={(e) => setSlug(e.currentTarget.value)} className="mono-sm" />
+        </label>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      </div>
+      <DialogFooter variant="bare" className="mt-4">
+        <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+        <Button loading={busy} onClick={save}>Add</Button>
+      </DialogFooter>
+    </EnvDialogShell>
+  )
+}
+
+function DeleteEnvDialog({ env, onClose }: { env: Environment; onClose: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function remove() {
+    setBusy(true)
+    setError(null)
+    try {
+      await deleteEnvAction({ id: env.id })
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete environment")
+      setBusy(false)
+    }
+  }
+  return (
+    <EnvDialogShell
+      title="Delete environment"
+      description={`This permanently removes "${env.name}" and all of its secrets. This cannot be undone.`}
+      onClose={onClose}
+    >
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <DialogFooter variant="bare" className="mt-4">
+        <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+        <Button variant="destructive" loading={busy} onClick={remove}>Delete</Button>
+      </DialogFooter>
+    </EnvDialogShell>
   )
 }
