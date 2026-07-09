@@ -17,7 +17,7 @@ import { app } from './app.js'
 import { getAuth, encrypt, decrypt, deriveSecrets, deriveEnvironmentSecretsAndNames, generateApiToken, getDb, getUserAbility } from './db.js'
 import { subject } from './ability.ts'
 import { schema } from 'db'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 
 // ── Test helpers ────────────────────────────────────────────────────
 
@@ -854,6 +854,130 @@ describe('RBAC — read gating & project creation', () => {
       method: 'POST', params: { pid: created.id }, body: { name: 'CreatorEnv', slug: 'creatorenv' },
     }))
     expect(env.ok).toBe(true)
+  })
+})
+
+// ── RBAC — read-only (locked) & private environments ───────────────
+// End-to-end guards for the env-level controls, driven through the real HTTP
+// API + D1: a locked env rejects writes from members and tokens (admins pass);
+// a private env is hidden from whole-project grants but visible to an explicit
+// env-scoped grant and to admins.
+
+describe('RBAC — read-only (locked) & private environments', () => {
+  let ownerFetch: ReturnType<typeof authedFetch>
+  let ownerUserId: string
+  let orgId: string
+  let projectId: string
+  let devEnvId: string
+  let prodEnvId: string   // public + LOCKED
+  let secretEnvId: string // PRIVATE
+
+  async function makeMember(
+    name: string,
+    grant: { role: 'admin' | 'write' | 'read'; environmentId?: string } | null,
+  ) {
+    const db = getDb()
+    const u = await createTestUser({ name })
+    await db.insert(schema.orgMember).values({ orgId, userId: u.user.id, role: 'member' })
+    if (grant) {
+      await db.insert(schema.projectMember).values({
+        projectId, userId: u.user.id, environmentId: grant.environmentId ?? null, role: grant.role,
+      })
+    }
+    return authedFetch(u.token)
+  }
+
+  beforeAll(async () => {
+    const owner = await createTestUser({ name: 'LockPrivOwner' })
+    ownerFetch = authedFetch(owner.token)
+    ownerUserId = owner.user.id
+    const org = assertOk(await ownerFetch('/api/v0/orgs', { method: 'POST', body: { name: 'LockPriv Org' } }))
+    orgId = org.id
+    const proj = assertOk(await ownerFetch('/api/v0/projects', { method: 'POST', body: { name: 'LockPriv Project', orgId } }))
+    projectId = proj.id
+    const envs = assertOk(await ownerFetch('/api/v0/projects/:pid/environments', { params: { pid: projectId } }))
+    devEnvId = envs.environments.find((e) => e.slug === 'dev')!.id
+    prodEnvId = envs.environments.find((e) => e.slug === 'prod')!.id
+    const secretEnv = assertOk(await ownerFetch('/api/v0/projects/:pid/environments', {
+      method: 'POST', params: { pid: projectId }, body: { name: 'Secret', slug: 'secret' },
+    }))
+    secretEnvId = secretEnv.id
+    // Seed a secret in the locked (prod) and private (secret) envs.
+    for (const eid of [prodEnvId, secretEnvId]) {
+      await ownerFetch('/api/v0/projects/:pid/environments/:eid/secrets', {
+        method: 'POST', params: { pid: projectId, eid }, body: { name: 'SHARED', value: `val-${eid}` },
+      })
+    }
+    // Apply the env-level flags directly (mirrors setEnvAccessAction).
+    const db = getDb()
+    await db.update(schema.environment).set({ locked: true }).where(eq(schema.environment.id, prodEnvId))
+    await db.update(schema.environment).set({ visibility: 'private' }).where(eq(schema.environment.id, secretEnvId))
+  })
+
+  test('locked env: whole-project write member can read but NOT write', async () => {
+    const member = await makeMember('LockMember', { role: 'write' })
+    // read allowed
+    const got = assertOk(await member('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      params: { pid: projectId, eid: prodEnvId, name: 'SHARED' },
+    }))
+    expect(got.value).toBe(`val-${prodEnvId}`)
+    // write blocked
+    assertErrorStatus(await member('/api/v0/projects/:pid/environments/:eid/secrets', {
+      method: 'POST', params: { pid: projectId, eid: prodEnvId }, body: { name: 'NOPE', value: 'x' },
+    }), 403)
+  })
+
+  test('locked env: project-admin bypasses the lock and can write', async () => {
+    const admin = await makeMember('LockAdmin', { role: 'admin' })
+    const res = assertOk(await admin('/api/v0/projects/:pid/environments/:eid/secrets', {
+      method: 'POST', params: { pid: projectId, eid: prodEnvId }, body: { name: 'BY_ADMIN', value: 'ok' },
+    }))
+    expect(res.ok).toBe(true)
+  })
+
+  test('locked env: read-write API token can read but NOT write', async () => {
+    const { key, hashedKey, prefix } = await generateApiToken()
+    await getDb().insert(schema.apiToken).values({
+      name: 'lock-token', projectId, environmentId: null, capability: 'read-write',
+      prefix, hashedKey, createdBy: ownerUserId,
+    })
+    const tokenFetch = authedFetch(key)
+    // read allowed
+    assertOk(await tokenFetch('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      params: { pid: projectId, eid: prodEnvId, name: 'SHARED' },
+    }))
+    // write blocked by the lock even though the token is read-write
+    assertErrorStatus(await tokenFetch('/api/v0/projects/:pid/environments/:eid/secrets', {
+      method: 'POST', params: { pid: projectId, eid: prodEnvId }, body: { name: 'TOKEN_NOPE', value: 'x' },
+    }), 403)
+  })
+
+  test('private env: hidden from a whole-project viewer (list + secret read)', async () => {
+    const viewer = await makeMember('PrivViewer', { role: 'read' })
+    const list = assertOk(await viewer('/api/v0/projects/:pid/environments', { params: { pid: projectId } }))
+    const ids = list.environments.map((e) => e.id)
+    expect(ids).toContain(devEnvId)      // public env visible
+    expect(ids).not.toContain(secretEnvId) // private env hidden
+    // and its secrets are unreachable
+    assertErrorStatus(await viewer('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      params: { pid: projectId, eid: secretEnvId, name: 'SHARED' },
+    }), 403)
+  })
+
+  test('private env: visible to an explicit env-scoped grant', async () => {
+    const shared = await makeMember('PrivShared', { role: 'read', environmentId: secretEnvId })
+    const list = assertOk(await shared('/api/v0/projects/:pid/environments', { params: { pid: projectId } }))
+    expect(list.environments.map((e) => e.id)).toContain(secretEnvId)
+    const got = assertOk(await shared('/api/v0/projects/:pid/environments/:eid/secrets/:name', {
+      params: { pid: projectId, eid: secretEnvId, name: 'SHARED' },
+    }))
+    expect(got.value).toBe(`val-${secretEnvId}`)
+  })
+
+  test('private env: visible to a project-admin', async () => {
+    const admin = await makeMember('PrivAdmin', { role: 'admin' })
+    const list = assertOk(await admin('/api/v0/projects/:pid/environments', { params: { pid: projectId } }))
+    expect(list.environments.map((e) => e.id)).toContain(secretEnvId)
   })
 })
 

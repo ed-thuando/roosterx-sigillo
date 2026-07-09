@@ -687,8 +687,14 @@ export async function requireSecretsApiAuth(
 
     // Locked (read-only) environments reject ALL token writes — tokens are
     // never admins, so no automated process can mutate a locked env's secrets.
-    if (env.locked && isSecretWriteAction(action)) {
-      throw forbiddenResponse('environment is read-only')
+    // Read the flag FRESH (resolveEnvironment is memoized ~5min); a security
+    // lock must take effect immediately, not after the cache expires.
+    if (isSecretWriteAction(action)) {
+      const meta = await db.query.environment.findFirst({
+        where: { id: env.id },
+        columns: { locked: true },
+      })
+      if (meta?.locked) throw forbiddenResponse('environment is read-only')
     }
 
     const ability = getTokenAbility(token)
