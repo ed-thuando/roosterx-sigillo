@@ -409,6 +409,7 @@ export const app = new Spiceflow()
   })
 
   .loader('/dash/projects/:projectId/environments', async ({ params, request, redirect }) => {
+    const db = getDb()
     const { projectId } = params
     const session = await requirePageSession(request)
     const orgId = await getOrgIdForProject(projectId)
@@ -417,7 +418,28 @@ export const app = new Spiceflow()
     const ability = await requirePageCan(session.userId, orgId, (a) => canReadProject(a, projectId))
     // Only project-admins (or org-admins) may create/edit/delete environments.
     const canWriteEnv = ability.can('Create', subject('Environment', { projectId }))
-    return { projectId, canWriteEnv }
+    // Same bar governs sharing (adding per-env access grants).
+    const canManageProjectMembers = ability.can('Create', subject('ProjectMember', { projectId }))
+
+    // Data for the per-environment "Share" control: org members to pick from and
+    // the project's existing grants (to show/edit who already has access).
+    // Only fetched for managers — regular viewers can't share.
+    const members = canManageProjectMembers
+      ? await db.query.orgMember.findMany({
+          where: { orgId },
+          with: { user: { columns: { id: true, name: true, email: true, image: true } } },
+          orderBy: { createdAt: 'asc' },
+        })
+      : []
+    const projectMembers = canManageProjectMembers
+      ? await db.query.projectMember.findMany({
+          where: { projectId },
+          with: { user: { columns: { id: true, name: true, email: true, image: true } } },
+          orderBy: { createdAt: 'asc' },
+        })
+      : []
+
+    return { projectId, canWriteEnv, canManageProjectMembers, members, projectMembers }
   })
 
   .page('/dash/projects/:projectId/environments', async () => {

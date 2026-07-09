@@ -10,7 +10,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { EyeIcon, EyeOffIcon, LockIcon, LockOpenIcon, PencilIcon, TrashIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, LockIcon, LockOpenIcon, PencilIcon, TrashIcon, UserPlusIcon } from "lucide-react";
 import { useState, useRef } from "react";
 import { z } from "zod";
 import { parseFormData } from "spiceflow";
@@ -21,7 +21,26 @@ import { Button } from "sigillo-app/src/components/ui/button";
 import { Frame } from "sigillo-app/src/components/ui/frame";
 import { Input } from "sigillo-app/src/components/ui/input";
 import { formatTime } from "sigillo-app/src/lib/utils";
-import { createEnvAction, deleteEnvAction, renameEnvAction, setEnvAccessAction } from "../actions.ts";
+import {
+  addProjectMemberAction,
+  createEnvAction,
+  deleteEnvAction,
+  removeProjectMemberAction,
+  renameEnvAction,
+  setEnvAccessAction,
+  updateProjectMemberRoleAction,
+} from "../actions.ts";
+import {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPopup,
+  DialogTitle,
+} from "sigillo-app/src/components/ui/dialog";
+import { NativeSelect } from "sigillo-app/src/components/ui/native-select";
+import { Spinner } from "sigillo-app/src/components/ui/spinner";
 import {
   Table,
   TableBody,
@@ -221,6 +240,149 @@ function EnvAccessCell({ env, canManage }: { env: Environment; canManage: boolea
   );
 }
 
+type UserLite = { id: string; name: string | null; email: string | null; image: string | null };
+type OrgMemberOption = { id: string; role: "admin" | "member"; user: UserLite | null };
+type ProjectGrant = {
+  id: string;
+  role: "admin" | "write" | "read";
+  environmentId: string | null;
+  user: UserLite | null;
+};
+
+// Per-environment sharing: pick an org member and give them read/edit access to
+// THIS environment (an env-scoped grant). For a private env this is the only way
+// anyone but an admin can see it. Reuses the same grant actions as the Access tab.
+function ShareEnvControl({ env, members, grants, projectId }: {
+  env: Environment;
+  members: OrgMemberOption[];
+  grants: ProjectGrant[];
+  projectId: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [addUserId, setAddUserId] = useState("");
+  const [addRole, setAddRole] = useState<"read" | "write">("read");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const envGrants = grants.filter((g) => g.environmentId === env.id);
+  const grantedIds = new Set(envGrants.map((g) => g.user?.id));
+  const available = members.filter((m) => m.user && !grantedIds.has(m.user.id));
+
+  const run = async (id: string, fn: () => Promise<unknown>) => {
+    setError(null);
+    setBusyId(id);
+    try {
+      await fn();
+    } catch (e: any) {
+      setError(e?.message || "Something went wrong");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title="Share this environment with people"
+        className="flex items-center gap-1 text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+      >
+        <UserPlusIcon className="size-3.5" />
+        {envGrants.length > 0 ? <span className="text-xs tabular-nums">{envGrants.length}</span> : null}
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>Share {env.name}</DialogTitle>
+            <DialogDescription>
+              Give specific org members access to this environment.
+              {env.visibility === "private"
+                ? " It's private — only people added here (and admins) can see it."
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-6 pb-2 flex flex-col gap-4">
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="flex flex-col gap-1 flex-1 min-w-40">
+                <label className="text-xs font-medium text-muted-foreground">Person</label>
+                <NativeSelect value={addUserId} onChange={(e) => setAddUserId(e.currentTarget.value)}>
+                  <option value="">Select a member…</option>
+                  {available.map((m) => (
+                    <option key={m.user!.id} value={m.user!.id}>
+                      {m.user!.name || m.user!.email || m.user!.id}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted-foreground">Access</label>
+                <NativeSelect value={addRole} onChange={(e) => setAddRole(e.currentTarget.value as "read" | "write")}>
+                  <option value="read">Read</option>
+                  <option value="write">Edit</option>
+                </NativeSelect>
+              </div>
+              <Button
+                size="sm"
+                loading={busyId === "add"}
+                disabled={!addUserId}
+                onClick={() =>
+                  run("add", async () => {
+                    await addProjectMemberAction({ projectId, userId: addUserId, environmentId: env.id, role: addRole });
+                    setAddUserId("");
+                    setAddRole("read");
+                  })
+                }
+              >
+                Share
+              </Button>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              {envGrants.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No one shared yet.</p>
+              ) : (
+                envGrants.map((g) => (
+                  <div key={g.id} className="flex items-center gap-2">
+                    <span className="text-sm flex-1 truncate">{g.user?.name || g.user?.email || "—"}</span>
+                    <NativeSelect
+                      disabled={busyId === g.id || g.role === "admin"}
+                      value={g.role}
+                      onChange={(e) =>
+                        run(g.id, () =>
+                          updateProjectMemberRoleAction({ memberId: g.id, role: e.currentTarget.value as "read" | "write" }),
+                        )
+                      }
+                    >
+                      <option value="read">Read</option>
+                      <option value="write">Edit</option>
+                      {g.role === "admin" ? <option value="admin">Admin</option> : null}
+                    </NativeSelect>
+                    <button
+                      disabled={busyId === g.id}
+                      onClick={() => run(g.id, () => removeProjectMemberAction({ memberId: g.id }))}
+                      className="text-muted-foreground hover:text-destructive cursor-pointer disabled:opacity-40"
+                      title="Remove access"
+                    >
+                      {busyId === g.id ? <Spinner className="size-4" /> : <TrashIcon className="size-3.5" />}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <DialogFooter variant="bare" className="mt-2">
+              <DialogClose render={<Button variant="outline" />}>Done</DialogClose>
+            </DialogFooter>
+          </div>
+        </DialogPopup>
+      </Dialog>
+    </>
+  );
+}
+
 const envSchema = z.object({ name: z.string().min(1, "Name is required"), slug: z.string().min(1, "Slug is required") });
 const envFields = envSchema.keyof().enum;
 
@@ -238,7 +400,8 @@ export function EnvironmentsPage() {
 }
 
 export function EnvironmentsTable() {
-  const { environments, projectId, canWriteEnv } = useLoaderData('/dash/projects/:projectId/environments');
+  const { environments, projectId, canWriteEnv, canManageProjectMembers, members, projectMembers } =
+    useLoaderData('/dash/projects/:projectId/environments');
   const [showNewRow, setShowNewRow] = useState(false);
 
   const columns: ColumnDef<Environment>[] = [
@@ -277,8 +440,20 @@ export function EnvironmentsTable() {
     {
       id: "access",
       header: "Access",
-      size: 110,
-      cell: ({ row }) => <EnvAccessCell env={row.original} canManage={canWriteEnv} />,
+      size: 150,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2.5">
+          <EnvAccessCell env={row.original} canManage={canWriteEnv} />
+          {canManageProjectMembers ? (
+            <ShareEnvControl
+              env={row.original}
+              members={members}
+              grants={projectMembers}
+              projectId={projectId}
+            />
+          ) : null}
+        </div>
+      ),
     },
     {
       id: "actions",
