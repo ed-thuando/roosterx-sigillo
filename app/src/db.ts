@@ -300,15 +300,15 @@ export async function requirePageSession(request: Request): Promise<Session> {
 
 // ── Org authorization ───────────────────────────────────────────────
 
-const lookupOrgMember = memoize({
-  namespace: 'org-member',
-  fn: async (userId: string, orgId: string): Promise<{ role: string } | null> => {
-    const db = getDb()
-    const member = await db.query.orgMember.findFirst({ where: { userId, orgId } })
-    if (!member) return null
-    return { role: member.role }
-  },
-})
+// Read fresh (NOT memoized): authorization must reflect the current DB. A stale
+// org role would keep granting/denying access for minutes after an admin edits
+// it. Authz correctness beats saving a small indexed lookup.
+async function lookupOrgMember(userId: string, orgId: string): Promise<{ role: string } | null> {
+  const db = getDb()
+  const member = await db.query.orgMember.findFirst({ where: { userId, orgId } })
+  if (!member) return null
+  return { role: member.role }
+}
 
 export async function requireOrgMember(userId: string, orgId: string) {
   const member = await lookupOrgMember(userId, orgId)
@@ -392,46 +392,45 @@ export async function getProjectIdForEnvironment(environmentId: string, projectI
 // call sites query with ability.can(action, subject(Type, { ... })).
 
 // Project-member rows for a user, filtered to the given org's projects.
-const lookupProjectGrants = memoize({
-  namespace: 'project-grants',
-  fn: async (
-    userId: string,
-    orgId: string,
-  ): Promise<{ role: 'admin' | 'write' | 'read'; projectId: string; environmentId: string | null }[]> => {
-    const db = getDb()
-    const rows = await db.query.projectMember.findMany({
-      where: { userId },
-      columns: { role: true, projectId: true, environmentId: true },
-      with: { project: { columns: { orgId: true } } },
-    })
-    return rows
-      .filter((r) => r.project?.orgId === orgId)
-      .map((r) => ({ role: r.role, projectId: r.projectId, environmentId: r.environmentId }))
-  },
-})
+// Read fresh (NOT memoized) so a newly added/removed/edited grant takes effect
+// on the next request — sharing must not lag behind a cache.
+async function lookupProjectGrants(
+  userId: string,
+  orgId: string,
+): Promise<{ role: 'admin' | 'write' | 'read'; projectId: string; environmentId: string | null }[]> {
+  const db = getDb()
+  const rows = await db.query.projectMember.findMany({
+    where: { userId },
+    columns: { role: true, projectId: true, environmentId: true },
+    with: { project: { columns: { orgId: true } } },
+  })
+  return rows
+    .filter((r) => r.project?.orgId === orgId)
+    .map((r) => ({ role: r.role, projectId: r.projectId, environmentId: r.environmentId }))
+}
 
 // Env-level access metadata (visibility + lock) for every environment in an
 // org's projects, grouped by projectId. Feeds grantsFromMembership so a user's
 // grants respect private/read-only environments. Fetched only for non-admins
 // (org-admins bypass these controls).
-const lookupEnvMetaByProject = memoize({
-  namespace: 'env-meta',
-  fn: async (orgId: string): Promise<Map<string, EnvMeta[]>> => {
-    const db = getDb()
-    const rows = await db.query.environment.findMany({
-      columns: { id: true, projectId: true, visibility: true, locked: true },
-      with: { project: { columns: { orgId: true } } },
-    })
-    const byProject = new Map<string, EnvMeta[]>()
-    for (const r of rows) {
-      if (r.project?.orgId !== orgId) continue
-      const list = byProject.get(r.projectId) ?? []
-      list.push({ id: r.id, visibility: r.visibility, locked: r.locked })
-      byProject.set(r.projectId, list)
-    }
-    return byProject
-  },
-})
+// Read fresh (NOT memoized): toggling an env private/locked must take effect on
+// the very next request, not after a cache window — that staleness is exactly
+// what made hiding look broken.
+async function lookupEnvMetaByProject(orgId: string): Promise<Map<string, EnvMeta[]>> {
+  const db = getDb()
+  const rows = await db.query.environment.findMany({
+    columns: { id: true, projectId: true, visibility: true, locked: true },
+    with: { project: { columns: { orgId: true } } },
+  })
+  const byProject = new Map<string, EnvMeta[]>()
+  for (const r of rows) {
+    if (r.project?.orgId !== orgId) continue
+    const list = byProject.get(r.projectId) ?? []
+    list.push({ id: r.id, visibility: r.visibility, locked: r.locked })
+    byProject.set(r.projectId, list)
+  }
+  return byProject
+}
 
 // Build the ability for a user within one org. Org admins get full access;
 // everyone else gets exactly what their project_member rows grant, shaped by
