@@ -20,7 +20,7 @@ import {
 import { deleteOrgAction, deleteProjectAction } from '../actions.ts'
 
 export function SettingsPage() {
-  const { orgId, orgName, projectId, projectName, projectNames } = useLoaderData('/dash/projects/:projectId/settings')
+  const { orgId, orgName, isOrgAdmin, projectId, projectName, projectNames } = useLoaderData('/dash/projects/:projectId/settings')
   const [open, setOpen] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -103,6 +103,7 @@ export function SettingsPage() {
         </div>
       </div>
 
+      {isOrgAdmin && (
       <div className="rounded-lg border border-destructive/40">
         <div className="p-5">
           <h2 className="text-lg font-semibold text-destructive flex items-center gap-2">
@@ -174,6 +175,7 @@ export function SettingsPage() {
           </Dialog>
         </div>
       </div>
+      )}
     </div>
   )
 }

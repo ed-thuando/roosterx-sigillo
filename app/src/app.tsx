@@ -518,8 +518,11 @@ export const app = new Spiceflow()
     const orgId = await getOrgIdForProject(params.projectId)
     if (!orgId) throw redirect('/')
     await requirePageOrgMember(session.userId, orgId)
-    // Settings exposes org deletion — org-admins only.
-    await requirePageCan(session.userId, orgId, (a) => a.can('manage', 'all'))
+    // Any project reader may open Settings. Destructive actions enforce their
+    // own finer-grained checks (org-admins for org deletion, project-admins for
+    // project deletion), so we no longer bounce non-org-admins to /dash.
+    const ability = await requirePageCan(session.userId, orgId, (a) => canReadProject(a, params.projectId))
+    const isOrgAdmin = ability.can('manage', 'all')
 
     const [orgRow, projects] = await Promise.all([
       db.query.org.findFirst({ where: { id: orgId }, columns: { name: true } }),
@@ -529,6 +532,7 @@ export const app = new Spiceflow()
     return {
       orgId,
       orgName: orgRow?.name ?? 'Organization',
+      isOrgAdmin,
       projectId: params.projectId,
       projectName: projects.find((p) => p.id === params.projectId)?.name ?? 'Project',
       projectNames: projects.map((p) => p.name),
