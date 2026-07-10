@@ -401,7 +401,6 @@ export function SecretsMatrix() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".env,text/plain"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
