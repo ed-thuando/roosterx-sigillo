@@ -346,7 +346,7 @@ function RenameEnvDialog({ env, onClose }: { env: Environment; onClose: () => vo
   }
   return (
     <EnvDialogShell title="Rename environment" description="Update the name and slug for this environment." onClose={onClose}>
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 px-6">
         <label className="flex flex-col gap-1 text-sm font-medium">
           Name
           <Input value={name} onChange={(e) => setName(e.currentTarget.value)} />
@@ -383,7 +383,7 @@ function AddEnvDialog({ projectId, onClose }: { projectId: string; onClose: () =
   }
   return (
     <EnvDialogShell title="Add environment" description="Create a new environment for this project." onClose={onClose}>
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 px-6">
         <label className="flex flex-col gap-1 text-sm font-medium">
           Name
           <Input value={name} onChange={(e) => setName(e.currentTarget.value)} />
@@ -422,7 +422,7 @@ function DeleteEnvDialog({ env, onClose }: { env: Environment; onClose: () => vo
       description={`This permanently removes "${env.name}" and all of its secrets. This cannot be undone.`}
       onClose={onClose}
     >
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? <p className="px-6 text-sm text-destructive">{error}</p> : null}
       <DialogFooter variant="bare" className="mt-4">
         <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
         <Button variant="destructive" loading={busy} onClick={remove}>Delete</Button>

@@ -36,6 +36,7 @@ export function SecretsMatrix() {
 
   const [draftValues, setDraftValues] = useState<DraftValues>({});
   const [rowVisible, setRowVisible] = useState<Record<string, boolean>>({});
+  const [revealAll, setRevealAll] = useState(false);
   const [saving, setSaving] = useState(false);
   // Env targeted by the hidden file input for .env import.
   const [importEnvId, setImportEnvId] = useState<string | null>(null);
@@ -217,7 +218,21 @@ export function SecretsMatrix() {
           <Table className="min-w-[600px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="min-w-48">Secret</TableHead>
+                <TableHead className="min-w-48">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>Secret</span>
+                    <button
+                      type="button"
+                      onClick={() => setRevealAll((v) => !v)}
+                      className="flex items-center gap-1 text-xs font-normal text-muted-foreground hover:text-foreground cursor-pointer"
+                      title={revealAll ? "Hide all secret values" : "Show all secret values"}
+                      aria-label={revealAll ? "Hide all secret values" : "Show all secret values"}
+                    >
+                      {revealAll ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
+                      {revealAll ? "Hide all" : "Show all"}
+                    </button>
+                  </div>
+                </TableHead>
                 {selectedEnvs.map((env) => (
                   <TableHead key={env.id} className="min-w-40">
                     <div className="flex items-center justify-between gap-1">
@@ -300,7 +315,7 @@ export function SecretsMatrix() {
                 </TableRow>
               ))}
               {secretNames.map((name) => {
-                const visible = rowVisible[name] ?? false;
+                const visible = revealAll || (rowVisible[name] ?? false);
                 // Effective value per shown env (missing = undefined, its own distinct state).
                 const effectiveValues = selectedEnvs.map(
                   (env) => draftValues[name]?.[env.id] ?? secretsByEnv[env.id]?.[name],

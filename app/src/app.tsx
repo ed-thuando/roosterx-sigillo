@@ -19,7 +19,6 @@ import {
   getOrgIdForProject,
   getUserAbility,
   deriveEnvironmentSecretsAndNames,
-  decrypt,
   safeDecrypt,
 } from './db.ts'
 import { subject, canReadProject, filterReadableEnvironments } from './ability.ts'
@@ -393,12 +392,19 @@ export const app = new Spiceflow()
         })
         for (const u of users) userMap.set(u.id, u)
       }
-      secrets = await Promise.all(derived.map(async (d) => ({
-        id: d.id, name: d.name,
-        value: await decrypt(d.valueEncrypted, d.iv),
-        createdAt: d.createdAt, updatedAt: d.updatedAt,
-        createdBy: d.userId ? (userMap.get(d.userId) ?? null) : null,
-      })))
+      // Use safeDecrypt so a single undecryptable secret (e.g. written under a
+      // different key) can't crash the whole secrets page — skip the bad rows.
+      const decrypted = await Promise.all(derived.map(async (d) => {
+        const res = await safeDecrypt(d.valueEncrypted, d.iv)
+        if (!res.ok) return null
+        return {
+          id: d.id, name: d.name,
+          value: res.value,
+          createdAt: d.createdAt, updatedAt: d.updatedAt,
+          createdBy: d.userId ? (userMap.get(d.userId) ?? null) : null,
+        }
+      }))
+      secrets = decrypted.filter(isTruthy)
     }
 
     const cookieHeader = request.headers.get('cookie') ?? ''
@@ -652,6 +658,10 @@ export const app = new Spiceflow()
  *  This replaces the old global layout('/*'). */
 const appThemeScript = `(function(){var d=document.documentElement;var m=document.cookie.match(/(?:^|;\\s*)color-theme=(light|dark)(?:;|$)/);var t=m?m[1]:null;if(!t)t=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';if(t==='dark')d.classList.add('dark');else d.classList.remove('dark')})()`
 
+// Recover open tabs from stale hashed chunks after a redeploy: when a lazy
+// import fails (chunk 404), reload once to pull the current HTML + asset hashes.
+const chunkReloadScript = `window.addEventListener('vite:preloadError',function(){if(!window.__spReloaded){window.__spReloaded=true;location.reload()}})`
+
 function getInitialThemeClass(request: Request) {
   const cookie = request.headers.get('cookie') ?? ''
   return /(?:^|;\s*)color-theme=dark(?:;|$)/.test(cookie) ? 'dark' : undefined
@@ -668,6 +678,7 @@ function AppShell({ children, mobileMenuSlot, request }: { children: React.React
       </Head>
       <body className="relative flex flex-col min-h-screen bg-background font-sans antialiased">
         <script dangerouslySetInnerHTML={{ __html: appThemeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: chunkReloadScript }} />
         <ProgressBar color="var(--primary)" />
         <Navbar mobileMenuSlot={mobileMenuSlot} />
         {children ?? (
