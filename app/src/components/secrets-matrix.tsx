@@ -7,15 +7,15 @@
 
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
-import { KeyIcon, CopyIcon, EyeIcon, EyeOffIcon, ArrowRightIcon } from "lucide-react";
+import { useState, useCallback, useMemo, useRef } from "react";
+import { KeyIcon, EyeIcon, EyeOffIcon, ArrowRightIcon, DownloadIcon, UploadIcon } from "lucide-react";
 import { Badge } from "sigillo-app/src/components/ui/badge";
 import { Button } from "sigillo-app/src/components/ui/button";
 import { Frame } from "sigillo-app/src/components/ui/frame";
 import { Input } from "sigillo-app/src/components/ui/input";
-import { NativeSelect } from "sigillo-app/src/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "sigillo-app/src/components/ui/table";
 import { cn } from "sigillo-app/src/lib/utils";
+import { parseEnv } from "sigillo-app/src/lib/parse-env";
 import { useLoaderData } from "spiceflow/react";
 import { saveSecretsAction } from "../actions.ts";
 
@@ -30,23 +30,15 @@ export function SecretsMatrix({ allVisible }: { allVisible: boolean }) {
 
   const secretNames = useMemo(() => [...allSecretNames].sort(), [allSecretNames]);
 
-  // Which env columns are visible. Default: all readable envs.
-  const [selectedEnvIds, setSelectedEnvIds] = useState<string[]>(() => environments.map((e) => e.id));
-  const selectedEnvs = useMemo(
-    () => environments.filter((e) => selectedEnvIds.includes(e.id)),
-    [environments, selectedEnvIds],
-  );
+  // Always show every readable environment as a column.
+  const selectedEnvs = environments;
 
   const [draftValues, setDraftValues] = useState<DraftValues>({});
   const [rowVisible, setRowVisible] = useState<Record<string, boolean>>({});
-  const [copySourceId, setCopySourceId] = useState<string>(selectedEnvId ?? environments[0]?.id ?? "");
   const [saving, setSaving] = useState(false);
-
-  const toggleEnv = useCallback((envId: string) => {
-    setSelectedEnvIds((prev) =>
-      prev.includes(envId) ? prev.filter((id) => id !== envId) : [...prev, envId],
-    );
-  }, []);
+  // Env targeted by the hidden file input for .env import.
+  const [importEnvId, setImportEnvId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const setDraft = useCallback((name: string, envId: string, value: string) => {
     setDraftValues((prev) => ({ ...prev, [name]: { ...prev[name], [envId]: value } }));
@@ -58,35 +50,50 @@ export function SecretsMatrix({ allVisible }: { allVisible: boolean }) {
     [secretsByEnv],
   );
 
-  // Copy one env's values for every secret into all other selected envs (draft).
-  const copyColumn = useCallback((sourceEnvId: string) => {
-    setDraftValues((prev) => {
-      const next: DraftValues = { ...prev };
-      for (const name of secretNames) {
-        const val = secretsByEnv[sourceEnvId]?.[name];
-        if (val === undefined) continue;
-        for (const env of selectedEnvs) {
-          if (env.id === sourceEnvId) continue;
-          next[name] = { ...next[name], [env.id]: val };
-        }
-      }
-      return next;
-    });
-  }, [secretNames, secretsByEnv, selectedEnvs]);
-
-  // Propagate a single secret's source-env value across the other selected envs.
-  const propagateRow = useCallback((name: string, sourceEnvId: string) => {
-    const val = draftValues[name]?.[sourceEnvId] ?? secretsByEnv[sourceEnvId]?.[name];
+  // Fill every environment with this key's first known value (draft or stored).
+  const fillRow = useCallback((name: string) => {
+    let val: string | undefined;
+    for (const env of selectedEnvs) {
+      const v = draftValues[name]?.[env.id] ?? secretsByEnv[env.id]?.[name];
+      if (v !== undefined) { val = v; break; }
+    }
     if (val === undefined) return;
     setDraftValues((prev) => {
       const row = { ...prev[name] };
-      for (const env of selectedEnvs) {
-        if (env.id === sourceEnvId) continue;
-        row[env.id] = val;
-      }
+      for (const env of selectedEnvs) row[env.id] = val!;
       return { ...prev, [name]: row };
     });
   }, [draftValues, secretsByEnv, selectedEnvs]);
+
+  // Download one environment's current values as a .env file.
+  const downloadEnv = useCallback((env: Environment) => {
+    const text = secretNames
+      .map((name) => [name, draftValues[name]?.[env.id] ?? secretsByEnv[env.id]?.[name]] as const)
+      .filter((entry): entry is readonly [string, string] => entry[1] !== undefined)
+      .map(([name, value]) => `${name}=${JSON.stringify(value)}`)
+      .join("\n") + "\n";
+    const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `.env.${env.slug}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [secretNames, draftValues, secretsByEnv]);
+
+  // Import a .env file's keys/values into a single environment.
+  const importEnvFile = useCallback(async (file: File, envId: string) => {
+    const parsed = parseEnv(await file.text());
+    const edits = Object.entries(parsed).map(([name, value]) => ({ name, value }));
+    if (edits.length === 0) return;
+    setSaving(true);
+    try {
+      await saveSecretsAction({ edits, environmentIds: [envId] });
+    } catch (e: any) {
+      alert(e?.message || "Failed to import .env");
+    } finally {
+      setSaving(false);
+    }
+  }, []);
 
   // Flatten drafts that differ from the stored value, grouped by env for save.
   const dirtyByEnv = useMemo(() => {
@@ -134,53 +141,39 @@ export function SecretsMatrix({ allVisible }: { allVisible: boolean }) {
   return (
     <>
       <Frame className="w-full gap-3">
-        {/* Env selection + bulk copy toolbar */}
-        <div className="flex flex-wrap items-center gap-2 px-1">
-          <span className="text-xs font-medium text-muted-foreground">Environments:</span>
-          {environments.map((env) => {
-            const active = selectedEnvIds.includes(env.id);
-            return (
-              <button
-                key={env.id}
-                onClick={() => toggleEnv(env.id)}
-                className={cn(
-                  "rounded-full border px-2.5 py-0.5 text-xs transition-colors cursor-pointer",
-                  active
-                    ? "border-primary bg-primary/10 text-foreground"
-                    : "border-input text-muted-foreground hover:bg-muted/50",
-                )}
-              >
-                {env.name}
-              </button>
-            );
-          })}
-          {canWriteSecret && selectedEnvs.length > 1 && (
-            <div className="ml-auto flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Copy from</span>
-              <NativeSelect
-                value={copySourceId}
-                onChange={(e) => setCopySourceId(e.target.value)}
-                className="h-7 w-32 text-xs"
-              >
-                {selectedEnvs.map((env) => (
-                  <option key={env.id} value={env.id}>{env.name}</option>
-                ))}
-              </NativeSelect>
-              <Button size="xs" variant="outline" onClick={() => copyColumn(copySourceId)}>
-                <CopyIcon className="size-3" />
-                to all
-              </Button>
-            </div>
-          )}
-        </div>
-
         <div className="overflow-x-auto">
           <Table className="min-w-[600px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="min-w-48">Secret</TableHead>
                 {selectedEnvs.map((env) => (
-                  <TableHead key={env.id} className="min-w-40">{env.name}</TableHead>
+                  <TableHead key={env.id} className="min-w-40">
+                    <div className="flex items-center justify-between gap-1">
+                      <span>{env.name}</span>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => downloadEnv(env)}
+                          className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
+                          title={`Download ${env.name} as a .env file`}
+                          aria-label={`Download ${env.name} as a .env file`}
+                        >
+                          <DownloadIcon className="size-3.5" />
+                        </button>
+                        {canWriteSecret && (
+                          <button
+                            type="button"
+                            onClick={() => { setImportEnvId(env.id); fileInputRef.current?.click(); }}
+                            className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
+                            title={`Import a .env file into ${env.name}`}
+                            aria-label={`Import a .env file into ${env.name}`}
+                          >
+                            <UploadIcon className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </TableHead>
                 ))}
                 {canWriteSecret && selectedEnvs.length > 1 && (
                   <TableHead className="w-10 text-center" />
@@ -259,9 +252,11 @@ export function SecretsMatrix({ allVisible }: { allVisible: boolean }) {
                     {canWriteSecret && selectedEnvs.length > 1 && (
                       <TableCell className="p-0 text-center">
                         <button
-                          onClick={() => propagateRow(name, copySourceId)}
+                          type="button"
+                          onClick={() => fillRow(name)}
                           className="cursor-pointer text-muted-foreground hover:text-foreground"
-                          title={`Copy ${copySourceId ? environments.find((e) => e.id === copySourceId)?.name : "source"}'s value across selected envs`}
+                          title="Fill every environment with this secret's value"
+                          aria-label="Fill every environment with this secret's value"
                         >
                           <ArrowRightIcon className="size-3.5" />
                         </button>
@@ -273,6 +268,18 @@ export function SecretsMatrix({ allVisible }: { allVisible: boolean }) {
             </TableBody>
           </Table>
         </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".env,text/plain"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file && importEnvId) void importEnvFile(file, importEnvId);
+            e.target.value = "";
+          }}
+        />
       </Frame>
 
       {dirtyCount > 0 && (

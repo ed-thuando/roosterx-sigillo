@@ -1,23 +1,14 @@
 // Project detail page client component.
-// Environment select on top right changes URL.
-// Secrets table below with Doppler-style hidden values.
+// Always renders the secrets matrix (all environments as columns).
 
 "use client";
 
 import { useState } from "react";
 import { XIcon } from "lucide-react";
-import { SecretsTable } from "sigillo-app/src/components/secrets-table";
 import { SecretsMatrix } from "sigillo-app/src/components/secrets-matrix";
 import { Button } from "sigillo-app/src/components/ui/button";
 import { FramePanel } from "sigillo-app/src/components/ui/frame";
-import {
-    Select,
-    SelectItem,
-    SelectPopup,
-    SelectTrigger,
-    SelectValue,
-} from "sigillo-app/src/components/ui/select";
-import { router, useLoaderData } from "spiceflow/react";
+import { useLoaderData } from "spiceflow/react";
 
 const cliBannerCookieName = "sigillo-cli-banner-dismissed";
 const cliBannerCodeLines = [
@@ -102,71 +93,25 @@ function CliBanner() {
 }
 
 export function ProjectPage() {
-  const {
-    projectId,
-    projectName,
-    environments,
-    selectedEnvId,
-    secrets,
-    showBanner,
-  } = useLoaderData('/dash/projects/:projectId/envs/:envSlug');
+  const { projectName, allSecretNames, showBanner } =
+    useLoaderData('/dash/projects/:projectId/envs/:envSlug');
   const [allVisible, setAllVisible] = useState(false);
-  const [viewAll, setViewAll] = useState(false);
 
   return (
     <div className="flex flex-col gap-4 w-full">
-      {/* Header: project name + env select */}
+      {/* Header: project name + reveal toggle */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{projectName}</h1>
-        <div className="flex items-center gap-2">
-          {(viewAll || secrets.length > 0) && (
-            <Button variant="ghost" size="sm" onClick={() => setAllVisible((v) => !v)}>
-              {allVisible ? "Hide all secrets" : "Show all secrets"}
-            </Button>
-          )}
-          <Select
-            defaultValue={selectedEnvId || ""}
-            onValueChange={(val: string | null) => {
-              if (!val) return
-              if (val === "__all__") {
-                setViewAll(true);
-                return;
-              }
-              setViewAll(false);
-              if (!projectId) return
-              const env = environments.find((e) => e.id === val);
-              if (env) router.push(router.href('/dash/projects/:projectId/envs/:envSlug', { projectId, envSlug: env.slug }));
-            }}
-          >
-            <SelectTrigger size="sm" className="w-auto min-w-40">
-              <SelectValue placeholder="Select environment">
-                {viewAll
-                  ? "All environments"
-                  : environments.find((e) => e.id === selectedEnvId)?.name || "Select environment"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              <SelectItem value="__all__">All environments</SelectItem>
-              {environments.map((env) => (
-                <SelectItem key={env.id} value={env.id}>
-                  {env.name}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </div>
+        {allSecretNames.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={() => setAllVisible((v) => !v)}>
+            {allVisible ? "Hide all secrets" : "Show all secrets"}
+          </Button>
+        )}
       </div>
 
       {showBanner && <CliBanner />}
 
-      {/* Secrets table */}
-      {viewAll ? (
-        <SecretsMatrix allVisible={allVisible} />
-      ) : selectedEnvId ? (
-        <SecretsTable allVisible={allVisible} />
-      ) : (
-        <p className="text-muted-foreground text-sm">No environments yet.</p>
-      )}
+      <SecretsMatrix allVisible={allVisible} />
     </div>
   );
 }
