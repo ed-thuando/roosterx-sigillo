@@ -10,7 +10,7 @@
 
 import './globals.css'
 import { Spiceflow } from 'spiceflow'
-import { Head, Link, ProgressBar, router } from 'spiceflow/react'
+import { Head, ProgressBar } from 'spiceflow/react'
 import {
   getDb, getAuth, getSession,
   requirePageSession,
@@ -27,6 +27,7 @@ import { apiApp } from './api.ts'
 import { cn } from 'sigillo-app/src/lib/utils'
 import { CreateOrgForm } from 'sigillo-app/src/components/create-org-form'
 import { SigilloLogo } from 'sigillo-app/src/components/logo'
+import { TabBar } from 'sigillo-app/src/components/tab-bar'
 import { app as holocronApp } from '@holocron.so/vite/app'
 
 
@@ -679,54 +680,6 @@ function AppShell({ children, mobileMenuSlot, request }: { children: React.React
   )
 }
 
-
-function TabBar({
-  projectId,
-  pathname,
-  firstEnvSlug,
-}: {
-  projectId: string
-  pathname: string
-  firstEnvSlug: string | null
-}) {
-  const base = `/dash/projects/${projectId}`
-  const safePath = pathname ?? ""
-  const envMatch = safePath.match(new RegExp(`^${base}/envs/([^/]+)`))
-  const envSlug = envMatch?.[1] ?? firstEnvSlug
-  const secretsHref = envSlug
-    ? router.href('/dash/projects/:projectId/envs/:envSlug', { projectId, envSlug })
-    : router.href('/dash/projects/:projectId', { projectId })
-  const tabs = [
-    { label: 'Secrets', href: secretsHref, active: safePath === base || safePath.startsWith(`${base}/envs`) },
-    { label: 'Tokens', href: router.href('/dash/projects/:projectId/tokens', { projectId }), active: safePath === `${base}/tokens` },
-    { label: 'Access', href: router.href('/dash/projects/:projectId/access', { projectId }), active: safePath === `${base}/access` },
-    { label: 'Settings', href: router.href('/dash/projects/:projectId/settings', { projectId }), active: safePath === `${base}/settings` },
-  ] as const
-
-  return (
-    <div className="max-w-(--content-max-width) mx-auto w-full">
-      <div className="flex h-10 items-stretch gap-4 sm:gap-6 px-4 sm:px-6 overflow-x-auto scrollbar-hide">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            className={cn(
-              "relative flex items-center shrink-0 whitespace-nowrap text-sm no-underline transition-colors duration-150",
-              tab.active
-                ? "font-medium text-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {tab.label}
-            {tab.active && (
-              <div className="absolute bottom-0 left-0 w-full h-[2.5px] bg-primary rounded-sm" />
-            )}
-          </Link>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 function ContentFrame({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
