@@ -200,12 +200,10 @@ export const app = new Spiceflow()
     const { Sidebar, MobileDrawer } = await import('sigillo-app/src/components/sidebar')
     const projectId = loaderData.projectId
     return (
-      <div className="isolate grow relative flex max-w-(--content-max-width) mx-auto w-full border-x border-border">
-        <GridDot position="tl" />
-        <GridDot position="tr" />
+      <div className="isolate grow relative flex w-full">
         <Sidebar />
         <MobileDrawer />
-        <main className="flex-1 p-4 sm:p-6 overflow-x-hidden overflow-y-auto min-w-0">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto min-w-0">
           {projectId && (
             <div className="sticky top-0 z-30 -mx-4 mb-5 border-b border-border bg-background px-4 pt-4 pb-3 sm:-mx-6 sm:px-6">
               <TabBar

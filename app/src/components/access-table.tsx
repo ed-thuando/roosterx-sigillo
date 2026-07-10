@@ -5,7 +5,7 @@
 "use client"
 
 import { useState } from "react"
-import { MoreVerticalIcon, PlusIcon, LockIcon, EyeOffIcon } from "lucide-react"
+import { MoreVerticalIcon, PlusIcon, LockIcon, EyeOffIcon, Trash2Icon } from "lucide-react"
 import {
   updateOrgMemberRoleAction,
   addProjectMemberAction,
@@ -34,7 +34,6 @@ import {
 } from "sigillo-app/src/components/ui/dialog"
 import { Input } from "sigillo-app/src/components/ui/input"
 import { cn } from "sigillo-app/src/lib/utils"
-
 type Member = {
   id: string
   createdAt: number
@@ -65,11 +64,23 @@ type Environment = {
 
 type CellValue = "none" | "read" | "write"
 
+
+function initialsFor(name: string | null, email: string | null): string {
+  const base = (name || email || "?").trim()
+  return base.slice(0, 2).toUpperCase() || "?"
+}
+
 export function AccessPage() {
   const {
     projectId, orgId, role, currentUserId, members, projectMembers,
     environments, canManageProjectMembers, canWriteEnv,
   } = useLoaderData('/dash/projects/:projectId/access')
+
+  const [dialog, setDialog] = useState<
+    { type: "rename" | "delete"; env: Environment } | { type: "add" } | null
+  >(null)
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState<string | null>(null)
 
   if (!canManageProjectMembers) {
     return (
@@ -83,7 +94,7 @@ export function AccessPage() {
     )
   }
 
-return (
+  return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -93,7 +104,12 @@ return (
             single None / Read / Write grant. Org admins always have full access.
           </p>
         </div>
-        <InviteButton orgId={orgId} />
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setDialog({ type: "add" })}>
+            <PlusIcon className="size-4" /> Add env
+          </Button>
+          <InviteButton orgId={orgId} />
+        </div>
       </div>
       <AccessMatrix
         projectId={projectId}
@@ -103,18 +119,41 @@ return (
         projectMembers={projectMembers}
         environments={environments}
         canWriteEnv={canWriteEnv}
+        dialog={dialog}
+        setDialog={setDialog}
+        error={error}
+        setError={setError}
+        pending={pending}
+        setPending={setPending}
       />
     </div>
   )
 }
 
-function initialsFor(name: string | null, email: string | null): string {
-  const base = (name || email || "?").trim()
-  return base.slice(0, 2).toUpperCase() || "?"
+function EnvDialogShell({
+  title, description, onClose, children,
+}: {
+  title: string
+  description: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {children}
+      </DialogPopup>
+    </Dialog>
+  )
 }
 
 function AccessMatrix({
   projectId, currentUserId, isOrgAdmin, members, projectMembers, environments, canWriteEnv,
+  dialog, setDialog, error, setError, pending, setPending,
 }: {
   projectId: string
   currentUserId: string
@@ -123,13 +162,13 @@ function AccessMatrix({
   projectMembers: ProjectGrant[]
   environments: Environment[]
   canWriteEnv: boolean
+  dialog: { type: "rename" | "delete"; env: Environment } | { type: "add" } | null
+  setDialog: React.Dispatch<React.SetStateAction<{ type: "rename" | "delete"; env: Environment } | { type: "add" } | null>>
+  error: string | null
+  setError: React.Dispatch<React.SetStateAction<string | null>>
+  pending: string | null
+  setPending: React.Dispatch<React.SetStateAction<string | null>>
 }) {
-  const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState<string | null>(null)
-  const [dialog, setDialog] = useState<
-    { type: "rename" | "delete"; env: Environment } | { type: "add" } | null
-  >(null)
-
   async function setCell(userId: string | undefined, envId: string, grantId: string | undefined, value: CellValue) {
     if (!userId) return
     const key = `${userId}:${envId}`
@@ -160,18 +199,29 @@ function AccessMatrix({
     }
   }
 
-return (
+  async function removeMember(memberId: string) {
+    setPending(`remove:${memberId}`)
+    setError(null)
+    try {
+      const grants = projectMembers.filter((g) => g.user?.id === memberId)
+      for (const grant of grants) {
+        await removeProjectMemberAction({ memberId: grant.id })
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to remove member")
+    } finally {
+      setPending(null)
+    }
+  }
+
+  return (
     <Frame className="w-full overflow-x-auto">
       <Table className="w-full min-w-[600px]">
         <TableHeader>
           <TableRow>
-            <TableHead className="min-w-36 px-2 py-1.5 text-xs">
-              <Button variant="outline" size="sm" onClick={() => setDialog({ type: "add" })}>
-                <PlusIcon className="size-3.5" /> Env
-              </Button>
-            </TableHead>
             <TableHead className="min-w-36 px-2 py-1.5 text-xs">Member</TableHead>
             <TableHead className="w-24 px-2 py-1.5 text-xs">Org role</TableHead>
+            <TableHead className="w-16 px-2 py-1.5 text-xs">Actions</TableHead>
             {environments.map((env) => (
               <TableHead key={env.id} className="min-w-32 px-2 py-1.5 text-xs">
                 <EnvHeader
@@ -189,8 +239,7 @@ return (
             const userId = member.user?.id
             const isFull = member.role === "admin"
             return (
-<TableRow key={member.id}>
-                <TableCell />
+              <TableRow key={member.id}>
                 <TableCell className="px-2 py-1.5">
                   <MemberCell member={member} currentUserId={currentUserId} />
                 </TableCell>
@@ -207,6 +256,20 @@ return (
                   ) : (
                     <span className="text-sm capitalize text-muted-foreground">{member.role}</span>
                   )}
+                </TableCell>
+                <TableCell className="px-2 py-1.5">
+                  {userId !== currentUserId && !isFull ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeMember(member.id)}
+                      disabled={pending === `remove:${member.id}`}
+                      className="text-destructive hover:bg-destructive/10"
+                      title="Remove from project"
+                    >
+                      <Trash2Icon className="size-4" />
+                    </Button>
+                  ) : null}
                 </TableCell>
                 {environments.map((env) => {
                   const grant = projectMembers.find(
@@ -244,7 +307,6 @@ return (
                     </TableCell>
                   )
                 })}
-                
               </TableRow>
             )
           })}
@@ -264,108 +326,7 @@ return (
   )
 }
 
-function MemberCell({ member, currentUserId }: { member: Member; currentUserId: string }) {
-  const u = member.user
-  const isYou = u?.id === currentUserId
-  return (
-    <div className="flex items-center gap-2">
-      {u?.image ? (
-        <img src={u.image} alt="" className="size-6 rounded-full object-cover" />
-      ) : (
-        <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
-          {initialsFor(u?.name ?? null, u?.email ?? null)}
-        </span>
-      )}
-      <span className="text-sm font-medium">
-        {u?.name || u?.email || "Unknown"}
-        {isYou ? " (you)" : ""}
-      </span>
-    </div>
-  )
-}
 
-function EnvHeader({
-  env, canWriteEnv, onRename, onDelete,
-}: {
-  env: Environment
-  canWriteEnv: boolean
-  onRename: () => void
-  onDelete: () => void
-}) {
-  async function toggleLock() {
-    try {
-      await setEnvAccessAction({ id: env.id, locked: !env.locked })
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to update environment")
-    }
-  }
-
-  async function togglePrivate() {
-    try {
-      await setEnvAccessAction({
-        id: env.id,
-        visibility: env.visibility === "private" ? "public" : "private",
-      })
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to update environment")
-    }
-  }
-
-  return (
-    <div className="flex items-start justify-between gap-1">
-      <div className="flex flex-col gap-0.5">
-        <div className="flex items-center gap-1.5">
-          <span className="font-medium">{env.name}</span>
-          {env.locked ? <LockIcon className="size-3.5 text-muted-foreground" /> : null}
-          {env.visibility === "private" ? <EyeOffIcon className="size-3.5 text-muted-foreground" /> : null}
-        </div>
-        <span className="mono-sm text-xs text-muted-foreground">{env.slug}</span>
-      </div>
-      {canWriteEnv ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            className="flex size-7 items-center justify-center rounded-md hover:bg-accent"
-            aria-label={`Manage ${env.name}`}
-          >
-            <MoreVerticalIcon className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuPopup side="bottom" align="end">
-            <DropdownMenuItem onClick={onRename}>Rename</DropdownMenuItem>
-            <DropdownMenuItem onClick={toggleLock}>
-              {env.locked ? "Allow writes" : "Make read-only"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={togglePrivate}>
-              {env.visibility === "private" ? "Make public" : "Make private"}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onDelete}>Delete</DropdownMenuItem>
-          </DropdownMenuPopup>
-        </DropdownMenu>
-      ) : null}
-    </div>
-  )
-}
-
-function EnvDialogShell({
-  title, description, onClose, children,
-}: {
-  title: string
-  description: string
-  onClose: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogPopup>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        {children}
-      </DialogPopup>
-    </Dialog>
-  )
-}
 
 function RenameEnvDialog({ env, onClose }: { env: Environment; onClose: () => void }) {
   const [name, setName] = useState(env.name)
@@ -469,3 +430,86 @@ function DeleteEnvDialog({ env, onClose }: { env: Environment; onClose: () => vo
     </EnvDialogShell>
   )
 }
+
+function EnvHeader({
+  env, canWriteEnv, onRename, onDelete,
+}: {
+  env: Environment
+  canWriteEnv: boolean
+  onRename: () => void
+  onDelete: () => void
+}) {
+  async function toggleLock() {
+    try {
+      await setEnvAccessAction({ id: env.id, locked: !env.locked })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to update environment")
+    }
+  }
+
+  async function togglePrivate() {
+    try {
+      await setEnvAccessAction({
+        id: env.id,
+        visibility: env.visibility === "private" ? "public" : "private",
+      })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to update environment")
+    }
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-1">
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium">{env.name}</span>
+          {env.locked ? <LockIcon className="size-3.5 text-muted-foreground" /> : null}
+          {env.visibility === "private" ? <EyeOffIcon className="size-3.5 text-muted-foreground" /> : null}
+        </div>
+        <span className="mono-sm text-xs text-muted-foreground">{env.slug}</span>
+      </div>
+      {canWriteEnv ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="flex size-7 items-center justify-center rounded-md hover:bg-accent"
+            aria-label={`Manage ${env.name}`}
+          >
+            <MoreVerticalIcon className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuPopup side="bottom" align="end">
+            <DropdownMenuItem onClick={onRename}>Rename</DropdownMenuItem>
+            <DropdownMenuItem onClick={toggleLock}>
+              {env.locked ? "Allow writes" : "Make read-only"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={togglePrivate}>
+              {env.visibility === "private" ? "Make public" : "Make private"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onDelete}>Delete</DropdownMenuItem>
+          </DropdownMenuPopup>
+        </DropdownMenu>
+      ) : null}
+    </div>
+  )
+}
+
+function MemberCell({ member, currentUserId }: { member: Member; currentUserId: string }) {
+  const u = member.user
+  const isYou = u?.id === currentUserId
+  return (
+    <div className="flex items-center gap-2">
+      {u?.image ? (
+        <img src={u.image} alt="" className="size-6 rounded-full object-cover" />
+      ) : (
+        <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
+          {initialsFor(u?.name ?? null, u?.email ?? null)}
+        </span>
+      )}
+      <span className="text-sm font-medium">
+        {u?.name || u?.email || "Unknown"}
+        {isYou ? " (you)" : ""}
+      </span>
+    </div>
+  )
+}
+

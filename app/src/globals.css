@@ -64,7 +64,7 @@
 }
 
 :root {
-  --content-max-width: 1200px;
+  --content-max-width: 100%;
   --radius: 0.625rem;
   /* Warm off-white background inspired by ElevenLabs' "eggshell" (#FDFCFC) */
   --background: #fdfcfb;

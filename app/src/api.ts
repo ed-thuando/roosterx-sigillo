@@ -12,6 +12,7 @@ import * as orm from 'drizzle-orm'
 import { createInsertSchema, createSelectSchema } from 'drizzle-orm/zod'
 import { z } from 'zod'
 import { schema } from 'db'
+import { safeDecrypt } from 'sigillo-app/src/db'
 import {
   getDb,
   getDataCenter,
@@ -370,9 +371,52 @@ export const apiApp = new Spiceflow()
     },
   })
   .route({
+    method: 'GET',
+    path: '/api/v0/orgs/:orgId/invites',
+    detail: { tags: ['Organizations'], summary: 'List pending org invitations (alias)' },
+    async handler({ params, request }) {
+      const auth = await requireApiSession(request)
+      const orgId = params.orgId
+      const db = getDb()
+      const { role } = await requireApiOrgMember(auth.userId, orgId)
+      if (role !== 'admin') throw json({ error: 'Only admins can view invitations' }, { status: 403 })
+      const invitations = await db.query.orgInvitation.findMany({
+        where: { orgId },
+        orderBy: { createdAt: 'desc' },
+      })
+      return {
+        invitations: invitations.map((inv) => ({
+          id: inv.id,
+          role: inv.role,
+          expiresAt: inv.expiresAt,
+          createdAt: inv.createdAt,
+        })),
+      }
+    },
+  })
+  .route({
     method: 'DELETE',
     path: '/api/v0/orgs/:orgId/invitations/:id',
     detail: { tags: ['Organizations'], summary: 'Revoke an org invitation' },
+    async handler({ params, request }) {
+      const auth = await requireApiSession(request)
+      const orgId = params.orgId
+      const db = getDb()
+      const { role } = await requireApiOrgMember(auth.userId, orgId)
+      if (role !== 'admin') throw json({ error: 'Only admins can revoke invitations' }, { status: 403 })
+      const invite = await db.query.orgInvitation.findFirst({
+        where: { id: params.id, orgId },
+        columns: { id: true },
+      })
+      if (!invite) throw json({ error: 'Invitation not found' }, { status: 404 })
+      await db.delete(schema.orgInvitation).where(orm.eq(schema.orgInvitation.id, params.id))
+      return { ok: true as const, id: invite.id }
+    },
+  })
+  .route({
+    method: 'DELETE',
+    path: '/api/v0/orgs/:orgId/invites/:id',
+    detail: { tags: ['Organizations'], summary: 'Revoke an org invitation (alias)' },
     async handler({ params, request }) {
       const auth = await requireApiSession(request)
       const orgId = params.orgId
@@ -697,7 +741,8 @@ export const apiApp = new Spiceflow()
 
       // Decrypt each value to check if it's empty
       const secrets = await Promise.all(derived.map(async (d) => {
-        const value = await decrypt(d.valueEncrypted, d.iv)
+        const result = await safeDecrypt(d.valueEncrypted, d.iv)
+        const value = result.ok ? result.value : "[DECRYPTION FAILED]"  // Gracefully handle decryption failures
         return {
           id: d.id, name: d.name,
           createdAt: d.createdAt, updatedAt: d.updatedAt,
@@ -776,7 +821,9 @@ export const apiApp = new Spiceflow()
       const derived = await deriveSecrets(auth.environmentId)
       const entries: Record<string, string> = {}
       for (const d of derived) {
-        entries[d.name] = await decrypt(d.valueEncrypted, d.iv)
+        const value = await safeDecrypt(d.valueEncrypted, d.iv)
+        if (value.ok) entries[d.name] = value.value
+        else console.warn(`[download] failed to decrypt secret ${d.name}: ${value.error}`)
       }
 
       const rendered = renderDownloadedSecrets(entries, format)
