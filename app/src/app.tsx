@@ -41,7 +41,7 @@ function isTruthy<T>(value: T | null | undefined): value is T {
 // avoids sending logged-in users to API routes or obvious 404s.
 function safeRedirectPath(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dash'
-  if (['/', '/device'].includes(value)) return value
+  if (value === '/') return value
   if (value === '/dash' || value.startsWith('/dash/') || value.startsWith('/invite/')) return value
   return '/'
 }
@@ -107,9 +107,8 @@ export const app = new Spiceflow()
     )
   })
 
-  // ── Layout: Standalone pages (login, device, invite, new-org) ──
+  // ── Layout: Standalone pages (login, invite, new-org) ──
   .layout('/login', async ({ children, request }) => <AppShell request={request}>{children}</AppShell>)
-  .layout('/device', async ({ children, request }) => <AppShell request={request}>{children}</AppShell>)
   .layout('/invite/*', async ({ children, request }) => <AppShell request={request}>{children}</AppShell>)
 
   .loader('/dash/*', async ({ request }) => {
@@ -580,19 +579,6 @@ export const app = new Spiceflow()
     )
   })
 
-  // ── Device flow verification page (standalone, no sidebar) ─────
-  // Uses the proper BetterAuth device authorization client flow:
-  // 1. Validate code via authClient.device({ query: { user_code } })
-  // 2. Approve/deny via authClient.device.approve() / .deny()
-  .page('/device', async ({ request }) => {
-    // User must be logged in to approve device codes
-    const session = await getSession(request)
-    if (!session) return Response.redirect(new URL('/login', request.url).toString(), 302)
-    const url = new URL(request.url)
-    const userCode = url.searchParams.get('user_code') ?? ''
-    const { DeviceFlow } = await import('sigillo-app/src/components/device-flow')
-    return <ContentFrame><DeviceFlow initialCode={userCode} /></ContentFrame>
-  })
 
   // ── Login page (standalone, no sidebar) ─────────────────────────
   .page('/login', async ({ request, redirect }) => {

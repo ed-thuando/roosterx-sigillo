@@ -8,10 +8,9 @@
 // when set, otherwise derive a stable AES-256 key from BETTER_AUTH_SECRET.
 
 import { env } from 'cloudflare:workers'
-import * as orm from 'drizzle-orm'
 import { getDb, schema } from 'db'
 import { betterAuth } from 'better-auth/minimal'
-import { genericOAuth, deviceAuthorization, bearer } from 'better-auth/plugins'
+import { bearer } from 'better-auth/plugins'
 import { drizzleAdapter } from 'better-auth-drizzle-adapter'
 import { redirect } from 'spiceflow'
 import { memoize } from './lib/memoize.ts'
@@ -33,15 +32,6 @@ function getRequestOrigin(request: Request): string {
   }
 
   return new URL(request.url).origin
-}
-
-function getRequestHost(request: Request): string {
-  const publicOrigin = getPublicOriginOverride(request)
-  if (publicOrigin) {
-    return new URL(publicOrigin).host.toLowerCase()
-  }
-
-  return new URL(request.url).host.toLowerCase()
 }
 
 function isLocalHost(hostname: string): boolean {
@@ -103,147 +93,26 @@ function getPublicOriginOverride(request: Request): string | null {
   return traforoUrl
 }
 
-const listOAuthHosts = memoize({
-  namespace: 'oauth-hosts',
-  fn: async (): Promise<string[] | null> => {
-    const db = getDb()
-    const rows = await db.select({ host: schema.oauthDomain.host })
-      .from(schema.oauthDomain)
-      .orderBy(schema.oauthDomain.createdAt)
-    if (rows.length === 0) return null
-    return rows.map((row) => row.host)
-  },
-})
-
-// Better Auth trusts the current request host plus previously registered hosts.
-// This is safe in the current Cloudflare Workers setup because the host is tied
-// to Cloudflare routing, not an arbitrary forged incoming Host header:
-// - Custom Domains require an exact hostname match to invoke the worker:
-//   https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
-// - Workers/resolveOverride keep Host aligned with the URL for security reasons:
-//   https://developers.cloudflare.com/workers/runtime-apis/request/
-// - Cloudflare explicitly says forged Host headers are blocked to prevent
-//   bypassing other customers' security settings:
-//   https://news.ycombinator.com/item?id=25058579
-// If ingress ever moves outside that model (extra proxies, wildcard SaaS
-// routing, etc.), revisit this and add an explicit app-level allowlist instead
-// of trusting DB entries.
-async function readOAuthClientId(host: string): Promise<string | null> {
-  const db = getDb()
-  const [row] = await db.select({ oauthClientId: schema.oauthDomain.oauthClientId })
-    .from(schema.oauthDomain)
-    .where(orm.eq(schema.oauthDomain.host, host))
-    .limit(1)
-  return row?.oauthClientId ?? null
-}
-
-const lookupOAuthClientId = memoize({
-  namespace: 'oauth-client',
-  fn: readOAuthClientId,
-})
-
-export async function ensureOAuthClient(request: Request): Promise<string> {
-  const pathname = new URL(request.url).pathname
-  const host = getRequestHost(request)
-  const hostname = host.split(':')[0] ?? host
-  const isLocal = isLocalHost(hostname)
-  const isOAuthCallback = pathname.startsWith('/api/auth/callback/')
-  const cachedClientId = isLocal && isOAuthCallback
-    ? await readOAuthClientId(host)
-    : await lookupOAuthClientId(host)
-
-  if (cachedClientId && (!isLocal || isOAuthCallback)) {
-    return cachedClientId
-  }
-
-  // Allow *.workers.dev hosts so self-hosters can use the app immediately
-  // after deploying via the "Deploy to Cloudflare" button, before adding a
-  // custom domain. The Cache API (memoize) won't work on *.workers.dev but
-  // auth and the rest of the app function correctly.
-
-  const origin = getRequestOrigin(request)
-  // The redirect_uri MUST exactly match what genericOAuth sends to the provider's
-  // /authorize endpoint (the provider does a strict string compare; a mismatch
-  // yields `invalid_redirect`). Since better-auth 1.7, genericOAuth is registered
-  // as a social provider and uses the CORE callback route `/api/auth/callback/:id`,
-  // NOT the old `/api/auth/oauth2/callback/:id`. Keep this path in sync with the
-  // `isOAuthCallback` check above if better-auth ever changes the callback route.
-  const callbackUrl = new URL('/api/auth/callback/sigillo', origin).toString()
-  // Localhost callback URLs are cheap disposable registrations. Refresh them on
-  // sign-in requests so stale provider-side client ids never break local login,
-  // but keep the cached id during the OAuth callback so the code exchange uses
-  // the same client that started the flow.
-  const res = await fetch(`${env.PROVIDER_URL}/api/auth/oauth2/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_name: `Sigillo Self-Hosted (${origin})`,
-      redirect_uris: [callbackUrl],
-      grant_types: ['authorization_code', 'refresh_token'],
-      response_types: ['code'],
-      scope: 'openid email profile',
-      token_endpoint_auth_method: 'none',
-    }),
-  })
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`OAuth client registration failed: ${res.status} ${body}`)
-  }
-  const { client_id }: { client_id: string } = await res.json()
-
-  const db = getDb()
-  await db.insert(schema.oauthDomain)
-    .values({ host, oauthClientId: client_id })
-    .onConflictDoUpdate({
-      target: schema.oauthDomain.host,
-      set: { oauthClientId: client_id, updatedAt: Date.now() },
-    })
-
-  return client_id
-}
-
-// ── BetterAuth ──────────────────────────────────────────────────────
-
+// ── BetterAuth (session validation only) ────────────────────────────
+// App login is Firebase (see auth.ts). BetterAuth is retained ONLY to (a) let
+// the vitest harness create users + bearer tokens via emailAndPassword, and
+// (b) validate not-yet-expired legacy sessions during the transition. No OAuth
+// provider, no dynamic client registration.
 export async function getAuth(request: Request) {
   const db = getDb()
-  const host = getRequestHost(request)
-  const clientId = await ensureOAuthClient(request)
-  const trustedOrigins = ((await listOAuthHosts()) ?? []).map((host) => originFromHost(host))
-  trustedOrigins.push(originFromHost(host))
+  const origin = getRequestOrigin(request)
   return betterAuth({
-    baseURL: getRequestOrigin(request),
+    baseURL: origin,
     secret: env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(db, { provider: 'sqlite' }),
-    trustedOrigins: Array.from(new Set(trustedOrigins)),
-    // Enable email/password signup in tests so tests can create users via
-    // auth.api.signUpEmail() and get bearer tokens without needing the
-    // OAuth provider. No-op in production since the UI only shows genericOAuth.
-    // VITEST var is set in wrangler.test.jsonc, propagated to process.env by nodejs_compat.
+    trustedOrigins: [origin],
+    // Enabled only under vitest so tests can create users + bearer tokens.
+    // No-op in production.
     emailAndPassword: { enabled: !!process.env.VITEST },
     session: {
-      cookieCache: {
-        enabled: true,
-        maxAge: 5 * 60, // 5 minutes — avoids a D1 round-trip on every request
-      },
+      cookieCache: { enabled: true, maxAge: 5 * 60 },
     },
-    plugins: [
-      genericOAuth({
-        config: [
-          {
-            providerId: 'sigillo',
-            clientId,
-            clientSecret: '',
-            // Auto-discover all endpoints from the provider's OIDC metadata
-            discoveryUrl: `${env.PROVIDER_URL}/api/auth/.well-known/openid-configuration`,
-            scopes: ['openid', 'email', 'profile'],
-            pkce: true,
-          },
-        ],
-      }),
-      deviceAuthorization({ verificationUri: '/device', schema: {} }),
-      bearer(),
-
-    ],
+    plugins: [bearer()],
   })
 }
 
