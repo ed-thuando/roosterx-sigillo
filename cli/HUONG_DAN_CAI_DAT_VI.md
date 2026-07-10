@@ -26,13 +26,22 @@ sigillo --version
 ```
 
 ### Cách B — Tự build từ mã nguồn
-Cần **Zig** (đúng phiên bản repo dùng — hỏi người quản lý; hiện Zig 0.16 CHƯA hợp)
-và **pnpm**.
+Cần **Zig 0.15.1** (KHÔNG dùng 0.16 — có breaking changes; 0.14 quá cũ) + **pnpm**.
 ```sh
+# 1. Cài Zig 0.15.1 (macOS arm64):
+curl -sL -o /tmp/zig.tar.xz https://ziglang.org/download/0.15.1/zig-aarch64-macos-0.15.1.tar.xz
+mkdir -p ~/zig-0.15.1 && tar -xJf /tmp/zig.tar.xz -C ~/zig-0.15.1 --strip-components=1
+export PATH="$HOME/zig-0.15.1:$PATH"     # thêm vào ~/.zshrc để dùng lâu dài
+zig version                              # phải in 0.15.1
+
+# 2. Build:
 git clone <repo-noi-bo>/roosterx-sigillo.git
 cd roosterx-sigillo/cli
-pnpm install
-pnpm install:local        # build binary + cài vào ~/.local/bin/sigillo
+zig build -Doptimize=ReleaseFast
+mkdir -p ~/.local/bin
+cp zig-out/bin/sigillo ~/.local/bin/sigillo
+codesign --force --sign - ~/.local/bin/sigillo   # macOS
+chmod +x ~/.local/bin/sigillo
 hash -r
 sigillo --version
 ```
