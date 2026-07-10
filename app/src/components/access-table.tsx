@@ -83,7 +83,7 @@ export function AccessPage() {
     )
   }
 
-  return (
+return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -160,20 +160,20 @@ function AccessMatrix({
     }
   }
 
-  return (
+return (
     <Frame className="w-full overflow-x-auto">
-      <Table>
+      <Table className="w-full min-w-[600px]">
         <TableHeader>
           <TableRow>
-            <TableHead className="min-w-48">
+            <TableHead className="min-w-36 px-2 py-1.5 text-xs">
               <Button variant="outline" size="sm" onClick={() => setDialog({ type: "add" })}>
-                <PlusIcon className="size-4" /> Env
+                <PlusIcon className="size-3.5" /> Env
               </Button>
             </TableHead>
-            <TableHead className="min-w-48">Member</TableHead>
-            <TableHead className="w-32">Org role</TableHead>
+            <TableHead className="min-w-36 px-2 py-1.5 text-xs">Member</TableHead>
+            <TableHead className="w-24 px-2 py-1.5 text-xs">Org role</TableHead>
             {environments.map((env) => (
-              <TableHead key={env.id} className="min-w-40">
+              <TableHead key={env.id} className="min-w-32 px-2 py-1.5 text-xs">
                 <EnvHeader
                   env={env}
                   canWriteEnv={canWriteEnv}
@@ -191,10 +191,10 @@ function AccessMatrix({
             return (
 <TableRow key={member.id}>
                 <TableCell />
-                <TableCell>
+                <TableCell className="px-2 py-1.5">
                   <MemberCell member={member} currentUserId={currentUserId} />
                 </TableCell>
-                <TableCell>
+                <TableCell className="px-2 py-1.5">
                   {isOrgAdmin ? (
                     <NativeSelect
                       value={member.role}
@@ -214,7 +214,7 @@ function AccessMatrix({
                   )
                   if (isFull) {
                     return (
-                      <TableCell key={env.id} className="text-sm text-muted-foreground">
+                      <TableCell key={env.id} className="px-2 py-1.5 text-xs text-muted-foreground">
                         Full
                       </TableCell>
                     )
@@ -225,12 +225,13 @@ function AccessMatrix({
                     : "none"
                   const key = `${userId}:${env.id}`
                   return (
-                    <TableCell key={env.id}>
+                    <TableCell key={env.id} className="px-2 py-1.5">
                       <div className="relative">
                         <NativeSelect
                           value={value}
                           disabled={pending === key}
                           onChange={(e) => setCell(userId, env.id, grant?.id, e.currentTarget.value as CellValue)}
+                          className="text-xs py-1 px-2"
                         >
                           <option value="none">None</option>
                           <option value="read">Read</option>

@@ -788,3 +788,12 @@ export async function decrypt(encrypted: string, iv: string): Promise<string> {
   const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBytes }, key, ciphertext)
   return new TextDecoder().decode(plaintext)
 }
+
+export async function safeDecrypt(encrypted: string, iv: string): Promise<{ ok: true; value: string } | { ok: false; error: string }> {
+  try {
+    const value = await decrypt(encrypted, iv)
+    return { ok: true, value }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Decryption failed' }
+  }
+}
