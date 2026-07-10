@@ -190,6 +190,9 @@ function SidebarContent({
 
       {/* ── User footer ──────────────────────────────────────── */}
       <div className="border-t border-sidebar-border pt-4">
+        <div className="mb-3 px-2">
+          <ThemeSelect />
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger
             className={cn(

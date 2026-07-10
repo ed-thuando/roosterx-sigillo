@@ -586,8 +586,8 @@ export async function deriveSecrets(environmentId: string): Promise<DerivedSecre
 // round-trip for secret data instead of N+1.
 export async function deriveEnvironmentSecretsAndNames(
   { environmentIds, selectedEnvId }: { environmentIds: string[]; selectedEnvId: string | null },
-): Promise<{ secrets: DerivedSecret[]; allNames: string[] }> {
-  if (environmentIds.length === 0) return { secrets: [], allNames: [] }
+): Promise<{ secrets: DerivedSecret[]; allNames: string[]; byEnv: Record<string, DerivedSecret[]> }> {
+  if (environmentIds.length === 0) return { secrets: [], allNames: [], byEnv: {} }
   const db = getDb()
 
   const [firstEnvId, ...restEnvIds] = environmentIds
@@ -605,16 +605,20 @@ export async function deriveEnvironmentSecretsAndNames(
   ])
 
   const allNames = new Set<string>()
-  let selectedEvents: SecretEventRow[] = []
+  const byEnv: Record<string, DerivedSecret[]> = {}
+  let selected: DerivedSecret[] = []
   for (let i = 0; i < environmentIds.length; i++) {
-    const events = results[i]!
-    if (environmentIds[i] === selectedEnvId) selectedEvents = events
-    for (const secret of replaySecretEvents(events)) allNames.add(secret.name)
+    const envId = environmentIds[i]!
+    const derived = replaySecretEvents(results[i]!)
+    byEnv[envId] = derived
+    if (envId === selectedEnvId) selected = derived
+    for (const secret of derived) allNames.add(secret.name)
   }
 
   return {
-    secrets: selectedEnvId ? replaySecretEvents(selectedEvents) : [],
+    secrets: selectedEnvId ? selected : [],
     allNames: [...allNames].sort(),
+    byEnv,
   }
 }
 

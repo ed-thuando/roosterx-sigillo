@@ -20,6 +20,7 @@ import {
   getUserAbility,
   deriveEnvironmentSecretsAndNames,
   decrypt,
+  safeDecrypt,
 } from './db.ts'
 import { subject, canReadProject, filterReadableEnvironments } from './ability.ts'
 import { apiApp } from './api.ts'
@@ -203,9 +204,9 @@ export const app = new Spiceflow()
       <div className="isolate grow relative flex w-full">
         <Sidebar />
         <MobileDrawer />
-        <main className="flex-1 overflow-x-hidden overflow-y-auto min-w-0">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto min-w-0 px-4 pt-4 sm:px-6 lg:px-8">
           {projectId && (
-            <div className="sticky top-0 z-30 -mx-4 mb-5 border-b border-border bg-background px-4 pt-4 pb-3 sm:-mx-6 sm:px-6">
+            <div className="sticky top-0 z-30 -mx-4 mb-8 border-b border-border bg-background px-4 pt-4 pb-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
               <TabBar
                 projectId={projectId}
                 pathname={loaderData.pathname}
@@ -363,10 +364,23 @@ export const app = new Spiceflow()
     let secrets: { id: string; name: string; value: string; createdAt: number; updatedAt: number; createdBy: { id: string; name: string } | null }[] = []
     // One D1 batch derives the selected env's secrets AND the union of names
     // across all envs, instead of a separate names round-trip + per-env query.
-    const { secrets: derived, allNames: allSecretNames } = await deriveEnvironmentSecretsAndNames({
+    const { secrets: derived, allNames: allSecretNames, byEnv } = await deriveEnvironmentSecretsAndNames({
       environmentIds: environments.map((e) => e.id),
       selectedEnvId,
     })
+
+    // Decrypt every readable env's secrets into a name→value map so the matrix
+    // view can show values across all environments. `environments` is already
+    // filtered to the caller's read scope. Undecryptable rows are skipped.
+    const secretsByEnv: Record<string, Record<string, string>> = {}
+    for (const env of environments) {
+      const map: Record<string, string> = {}
+      for (const d of byEnv[env.id] ?? []) {
+        const res = await safeDecrypt(d.valueEncrypted, d.iv)
+        if (res.ok) map[d.name] = res.value
+      }
+      secretsByEnv[env.id] = map
+    }
     if (selectedEnvId) {
       // Resolve all secret authors in ONE query instead of findFirst per user.
       const userIds = [...new Set(derived.map((d) => d.userId).filter(isTruthy))]
@@ -391,6 +405,7 @@ export const app = new Spiceflow()
     return {
       selectedEnvId,
       secrets,
+      secretsByEnv,
       allSecretNames,
       canWriteSecret,
       showBanner: !hasCookie({ cookieHeader, name: cliBannerCookieName }),
@@ -654,28 +669,16 @@ function AppShell({ children, mobileMenuSlot, request }: { children: React.React
         <script dangerouslySetInnerHTML={{ __html: appThemeScript }} />
         <ProgressBar color="var(--primary)" />
         <Navbar mobileMenuSlot={mobileMenuSlot} />
-        <div className="border-t border-border" />
         {children ?? (
-          <div className="relative max-w-(--content-max-width) mx-auto w-full border-x border-border flex items-center justify-center text-muted-foreground py-12">
-            <GridDot position="tl" />
-            <GridDot position="tr" />
+          <div className="max-w-(--content-max-width) mx-auto w-full flex items-center justify-center text-muted-foreground py-12">
             Page not found
           </div>
         )}
-        <Footer />
       </body>
     </html>
   )
 }
 
-
-function GitHubIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
-    </svg>
-  )
-}
 
 function TabBar({
   projectId,
@@ -701,11 +704,7 @@ function TabBar({
   ] as const
 
   return (
-    <div className="relative max-w-(--content-max-width) mx-auto w-full border-x border-border">
-      <GridDot position="tl" />
-      <GridDot position="tr" />
-      <GridDot position="bl" />
-      <GridDot position="br" />
+    <div className="max-w-(--content-max-width) mx-auto w-full">
       <div className="flex h-10 items-stretch gap-4 sm:gap-6 px-4 sm:px-6 overflow-x-auto scrollbar-hide">
         {tabs.map((tab) => (
           <Link
@@ -729,29 +728,9 @@ function TabBar({
   )
 }
 
-/** Decorative dot placed at border intersections. Must be inside a relative container.
-    Outer circle masks the border crossing with the page bg, inner dot marks the joint. */
-const gridDotPosition = {
-  tl: 'top-0 left-0 -translate-x-1/2 -translate-y-1/2',
-  tr: 'top-0 right-0 translate-x-1/2 -translate-y-1/2',
-  bl: 'bottom-0 left-0 -translate-x-1/2 translate-y-1/2',
-  br: 'bottom-0 right-0 translate-x-1/2 translate-y-1/2',
-} as const
-
-function GridDot({ position }: { position: keyof typeof gridDotPosition }) {
-  return (
-    <div aria-hidden className={cn(
-      'absolute z-20 size-5 rounded-full bg-background pointer-events-none',
-      'after:content-[""] after:block after:size-[2px] after:rounded-full after:bg-foreground/40 after:m-auto',
-      'flex items-center justify-center',
-      gridDotPosition[position],
-    )} />
-  )
-}
-
 function ContentFrame({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("max-w-(--content-max-width) mx-auto w-full border-x border-border", className)}>
+    <div className={cn("max-w-(--content-max-width) mx-auto w-full", className)}>
       {children}
     </div>
   )
@@ -759,10 +738,8 @@ function ContentFrame({ children, className }: { children: React.ReactNode; clas
 
 function Navbar({ mobileMenuSlot }: { mobileMenuSlot?: React.ReactNode }) {
   return (
-    <nav className="sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="relative max-w-(--content-max-width) mx-auto border-x border-border">
-        <GridDot position="bl" />
-        <GridDot position="br" />
+    <nav className="md:hidden sticky top-0 z-50 w-full bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="max-w-(--content-max-width) mx-auto">
         <div className="flex h-14 items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-2">
             {mobileMenuSlot}
@@ -772,71 +749,9 @@ function Navbar({ mobileMenuSlot }: { mobileMenuSlot?: React.ReactNode }) {
               <SigilloLogo className="h-[36px] w-auto shrink-0" />
             </a>
           </div>
-          <div className="hidden md:flex items-center gap-3">
-            <a
-              href="https://github.com/remorses/sigillo/issues/new"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              feedback
-            </a>
-            <a
-              href="https://github.com/remorses/sigillo"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              github
-            </a>
-          </div>
         </div>
       </div>
     </nav>
-  )
-}
-
-function XIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-    </svg>
-  )
-}
-
-async function Footer() {
-  const { FooterColo, ThemeSelect } = await import('sigillo-app/src/components/sidebar')
-  return (
-    <footer className="flex flex-col ">
-      <div className="border-t border-border" />
-      <div className="relative max-w-(--content-max-width) grow mx-auto w-full border-x border-border">
-        <GridDot position="tl" />
-        <GridDot position="tr" />
-        <div className="flex flex-wrap items-center justify-end gap-4 px-6 py-5">
-          <ThemeSelect />
-          <FooterColo />
-          <span className="text-xs text-muted-foreground">
-            © {new Date().getFullYear()} Sigillo
-          </span>
-          <a
-            href="https://github.com/remorses/sigillo"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <GitHubIcon className="size-4" />
-          </a>
-          <a
-            href="https://x.com/__morse"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <XIcon className="size-3.5" />
-          </a>
-        </div>
-      </div>
-    </footer>
   )
 }
 

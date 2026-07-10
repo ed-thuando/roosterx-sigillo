@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { XIcon } from "lucide-react";
 import { SecretsTable } from "sigillo-app/src/components/secrets-table";
+import { SecretsMatrix } from "sigillo-app/src/components/secrets-matrix";
 import { Button } from "sigillo-app/src/components/ui/button";
 import { FramePanel } from "sigillo-app/src/components/ui/frame";
 import {
@@ -110,6 +111,7 @@ export function ProjectPage() {
     showBanner,
   } = useLoaderData('/dash/projects/:projectId/envs/:envSlug');
   const [allVisible, setAllVisible] = useState(false);
+  const [viewAll, setViewAll] = useState(false);
 
   return (
     <div className="flex flex-col gap-4 w-full">
@@ -117,7 +119,7 @@ export function ProjectPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{projectName}</h1>
         <div className="flex items-center gap-2">
-          {secrets.length > 0 && (
+          {(viewAll || secrets.length > 0) && (
             <Button variant="ghost" size="sm" onClick={() => setAllVisible((v) => !v)}>
               {allVisible ? "Hide all secrets" : "Show all secrets"}
             </Button>
@@ -125,17 +127,26 @@ export function ProjectPage() {
           <Select
             defaultValue={selectedEnvId || ""}
             onValueChange={(val: string | null) => {
-              if (!val || !projectId) return
+              if (!val) return
+              if (val === "__all__") {
+                setViewAll(true);
+                return;
+              }
+              setViewAll(false);
+              if (!projectId) return
               const env = environments.find((e) => e.id === val);
               if (env) router.push(router.href('/dash/projects/:projectId/envs/:envSlug', { projectId, envSlug: env.slug }));
             }}
           >
             <SelectTrigger size="sm" className="w-auto min-w-40">
               <SelectValue placeholder="Select environment">
-                {environments.find((e) => e.id === selectedEnvId)?.name || "Select environment"}
+                {viewAll
+                  ? "All environments"
+                  : environments.find((e) => e.id === selectedEnvId)?.name || "Select environment"}
               </SelectValue>
             </SelectTrigger>
             <SelectPopup>
+              <SelectItem value="__all__">All environments</SelectItem>
               {environments.map((env) => (
                 <SelectItem key={env.id} value={env.id}>
                   {env.name}
@@ -149,7 +160,9 @@ export function ProjectPage() {
       {showBanner && <CliBanner />}
 
       {/* Secrets table */}
-      {selectedEnvId ? (
+      {viewAll ? (
+        <SecretsMatrix allVisible={allVisible} />
+      ) : selectedEnvId ? (
         <SecretsTable allVisible={allVisible} />
       ) : (
         <p className="text-muted-foreground text-sm">No environments yet.</p>

@@ -1064,7 +1064,7 @@ describe('secrets derivation — batching & multi-author', () => {
 
   test('empty env list returns empty results without querying', async () => {
     const result = await deriveEnvironmentSecretsAndNames({ environmentIds: [], selectedEnvId: null })
-    expect(result).toEqual({ secrets: [], allNames: [] })
+    expect(result).toEqual({ secrets: [], allNames: [], byEnv: {} })
   })
 
   test('null selected env returns no secrets but the same full name union', async () => {
