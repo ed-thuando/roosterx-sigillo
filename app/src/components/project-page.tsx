@@ -6,7 +6,6 @@
 import { useState } from "react";
 import { XIcon } from "lucide-react";
 import { SecretsMatrix } from "sigillo-app/src/components/secrets-matrix";
-import { Button } from "sigillo-app/src/components/ui/button";
 import { FramePanel } from "sigillo-app/src/components/ui/frame";
 import { useLoaderData } from "spiceflow/react";
 
@@ -93,25 +92,16 @@ function CliBanner() {
 }
 
 export function ProjectPage() {
-  const { projectName, allSecretNames, showBanner } =
+  const { projectName, showBanner } =
     useLoaderData('/dash/projects/:projectId/envs/:envSlug');
-  const [allVisible, setAllVisible] = useState(false);
 
   return (
     <div className="flex flex-col gap-4 w-full">
-      {/* Header: project name + reveal toggle */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">{projectName}</h1>
-        {allSecretNames.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={() => setAllVisible((v) => !v)}>
-            {allVisible ? "Hide all secrets" : "Show all secrets"}
-          </Button>
-        )}
-      </div>
+      <h1 className="text-2xl font-bold tracking-tight">{projectName}</h1>
 
       {showBanner && <CliBanner />}
 
-      <SecretsMatrix allVisible={allVisible} />
+      <SecretsMatrix />
     </div>
   );
 }

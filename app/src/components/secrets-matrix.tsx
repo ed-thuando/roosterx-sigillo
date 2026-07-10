@@ -1,6 +1,6 @@
 // Secrets Matrix: grid of secrets (rows) × environments (columns).
 // Shows every secret name across all readable environments in one view, with
-// each env's value inline. Values are masked by default (allVisible reveals).
+// each env's value inline. Values are masked by default; the per-row eye reveals.
 // Editing a cell (or adding a new key row) drafts a change; Save writes drafts
 // grouped per environment via saveSecretsAction. A per-row arrow fills every
 // environment with the key's known value; per-env .env import/download and
@@ -25,7 +25,7 @@ type Environment = { id: string; name: string; slug: string };
 // draftValues[secretName][envId] = pending value for that cell
 type DraftValues = Record<string, Record<string, string>>;
 
-export function SecretsMatrix({ allVisible }: { allVisible: boolean }) {
+export function SecretsMatrix() {
   const { environments, allSecretNames, secretsByEnv, canWriteSecret } =
     useLoaderData("/dash/projects/:projectId/envs/:envSlug");
 
@@ -300,7 +300,7 @@ export function SecretsMatrix({ allVisible }: { allVisible: boolean }) {
                 </TableRow>
               ))}
               {secretNames.map((name) => {
-                const visible = allVisible || (rowVisible[name] ?? false);
+                const visible = rowVisible[name] ?? false;
                 // Effective value per shown env (missing = undefined, its own distinct state).
                 const effectiveValues = selectedEnvs.map(
                   (env) => draftValues[name]?.[env.id] ?? secretsByEnv[env.id]?.[name],
