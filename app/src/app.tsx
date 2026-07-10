@@ -12,7 +12,7 @@ import './globals.css'
 import { Spiceflow } from 'spiceflow'
 import { Head, ProgressBar } from 'spiceflow/react'
 import {
-  getDb, getAuth, getSession,
+  getDb, getSession,
   requirePageSession,
   requirePageOrgMember,
   requirePageCan,
@@ -71,19 +71,6 @@ function firstReadableProjectEnv(
 }
 
 export const app = new Spiceflow()
-
-  // ── BetterAuth middleware ──────────────────────────────────────
-  // BetterAuth runs in the worker, not the DO. Only SQL crosses the
-  // DO boundary via sqlite-proxy.
-  .use(async ({ request }, next) => {
-    const url = new URL(request.url)
-    if (url.pathname.startsWith('/api/auth')) {
-      const auth = await getAuth(request)
-      const res = await auth.handler(request)
-      if (res.ok || res.status !== 404) return res
-    }
-    return next()
-  })
 
   // ── Native auth (Firebase Google sign-in → own D1 session) ──────
   // Frontend does Firebase signInWithPopup, then POSTs the ID token here.

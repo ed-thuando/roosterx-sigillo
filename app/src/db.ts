@@ -276,21 +276,27 @@ export function getSession(request: Request): Promise<Session | null> {
 
 async function resolveSession(request: Request): Promise<Session | null> {
   // Native Firebase-backed session (sig_session cookie) takes precedence.
-  // Falls through to BetterAuth so existing sessions keep working during the
-  // migration — no lockout. Remove the BetterAuth path once cutover is verified.
   const native = await getSessionFromRequest(request)
   if (native) return native
 
-  const hasCookie = request.headers.has('cookie')
-  const hasAuthorization = request.headers.has('authorization')
-  if (!hasCookie && !hasAuthorization) {
+  // Legacy BetterAuth fallback — ONLY when a BetterAuth credential is actually
+  // present (Authorization bearer or a better-auth cookie). This avoids calling
+  // getAuth() for ordinary requests (e.g. theme/banner cookies), so retiring the
+  // provider can't add latency or errors to normal page loads. Wrapped in
+  // try/catch so a removed provider degrades to "logged out", never a 500.
+  const cookieHeader = request.headers.get('cookie') ?? ''
+  const hasLegacyCredential =
+    request.headers.has('authorization') || /better-auth|session_token/i.test(cookieHeader)
+  if (!hasLegacyCredential) return null
+
+  try {
+    const auth = await getAuth(request)
+    const session = await auth.api.getSession({ headers: request.headers })
+    if (!session) return null
+    return { userId: session.user.id, user: { id: session.user.id, name: session.user.name, email: session.user.email } }
+  } catch {
     return null
   }
-
-  const auth = await getAuth(request)
-  const session = await auth.api.getSession({ headers: request.headers })
-  if (!session) return null
-  return { userId: session.user.id, user: { id: session.user.id, name: session.user.name, email: session.user.email } }
 }
 
 export async function requireApiSession(request: Request): Promise<Session> {
