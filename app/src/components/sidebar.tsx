@@ -47,7 +47,6 @@ import {
   DropdownMenuLabel,
 } from "sigillo-app/src/components/ui/dropdown-menu";
 import { createProjectAction } from "../actions.ts";
-import { authClient } from "../auth-client.ts";
 
 // ── Shared sidebar content ─────────────────────────────────────
 // Used by both the desktop aside and the mobile drawer so the org
@@ -231,8 +230,8 @@ function SidebarContent({
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={async () => {
-                await authClient.signOut();
-                window.location.href = router.href("/login");
+                await fetch("/auth/signout", { method: "POST" });
+                window.location.href = "/login";
               }}
             >
               <LogOutIcon className="size-4 text-muted-foreground" />

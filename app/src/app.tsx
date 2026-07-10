@@ -614,12 +614,17 @@ export const app = new Spiceflow()
     const redirectTo = safeRedirectPath(url.searchParams.get('redirect'))
     if (session) return redirect(redirectTo)
     const { LoginButton } = await import('sigillo-app/src/components/login-button')
+    const firebaseConfig = {
+      apiKey: process.env.FIREBASE_API_KEY ?? '',
+      authDomain: process.env.FIREBASE_AUTH_DOMAIN ?? '',
+      projectId: process.env.FIREBASE_PROJECT_ID ?? '',
+    }
     return (
       <ContentFrame className="flex justify-center items-center min-h-[60vh]">
         <div className="text-center max-w-sm">
           <SigilloLogo className="h-[40px] w-auto mx-auto mb-2" />
           <p className="text-muted-foreground mb-6">Sign in to manage your secrets</p>
-          <LoginButton callbackURL={redirectTo} />
+          <LoginButton callbackURL={redirectTo} firebaseConfig={firebaseConfig} />
         </div>
       </ContentFrame>
     )
