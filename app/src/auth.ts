@@ -104,6 +104,13 @@ function sessionCookie(value: string, maxAgeSec: number, secure: boolean): strin
   return parts.join('; ')
 }
 
+// Expire an arbitrary cookie (used to clear legacy BetterAuth cookies on signout).
+function expireCookie(name: string, secure: boolean): string {
+  const parts = [`${name}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0']
+  if (secure) parts.push('Secure')
+  return parts.join('; ')
+}
+
 function isSecure(request: Request): boolean {
   return new URL(request.url).protocol === 'https:'
 }
@@ -175,8 +182,24 @@ export async function signOutRequest(request: Request): Promise<Response> {
   if (token) {
     await getDb().delete(schema.session).where(eq(schema.session.token, token))
   }
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: { 'content-type': 'application/json', 'set-cookie': sessionCookie('', 0, isSecure(request)) },
-  })
+  const secure = isSecure(request)
+  const headers = new Headers({ 'content-type': 'application/json' })
+  headers.append('set-cookie', sessionCookie('', 0, secure))
+  // Also expire any session/BetterAuth cookie actually present on the request so
+  // users with a pre-migration session can sign out regardless of cookie name.
+  const present = Object.keys(parseCookies(request))
+  const legacy = new Set([
+    'better-auth.session_token',
+    'better-auth.session_data',
+    '__Secure-better-auth.session_token',
+    '__Secure-better-auth.session_data',
+  ])
+  for (const name of present) {
+    if (name === SESSION_COOKIE) continue
+    if (legacy.has(name) || /session|better-auth/i.test(name)) {
+      headers.append('set-cookie', expireCookie(name, secure))
+      if (!name.startsWith('__Secure-') && secure) headers.append('set-cookie', expireCookie(name, false))
+    }
+  }
+  return new Response(JSON.stringify({ ok: true }), { status: 200, headers })
 }
