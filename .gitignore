@@ -9,3 +9,4 @@ tmp
 .zig-cache
 zig-out
 dummy-non-existing-folder
+app/wrangler.jsonc
