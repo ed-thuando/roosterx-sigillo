@@ -1,17 +1,12 @@
-// Worker-level database client, auth, encryption, and authorization guards.
+// Worker-level database client, encryption, and authorization guards.
 //
-// getDb() creates a drizzle-orm/d1 client bound to env.DB. The schema uses
-// epochMs custom columns that accept both Date and number inputs, so
-// BetterAuth's Date params are converted to epoch ms before reaching D1.
-// getAuth(request) creates a BetterAuth instance backed by the same drizzle
-// client for the current request host. encrypt()/decrypt() use ENCRYPTION_KEY
+// getDb() creates a drizzle-orm/d1 client bound to env.DB. Auth is handled in
+// auth.ts (Firebase login → native D1 sessions); getSession/requireSession here
+// resolve the session from the request. encrypt()/decrypt() use ENCRYPTION_KEY
 // when set, otherwise derive a stable AES-256 key from BETTER_AUTH_SECRET.
 
 import { env } from 'cloudflare:workers'
 import { getDb, schema } from 'db'
-import { betterAuth } from 'better-auth/minimal'
-import { bearer } from 'better-auth/plugins'
-import { drizzleAdapter } from 'better-auth-drizzle-adapter'
 import { redirect } from 'spiceflow'
 import { memoize } from './lib/memoize.ts'
 import { getSessionFromRequest } from './auth.ts'
@@ -19,102 +14,6 @@ import { buildAbility, grantsFromMembership, tokenGrant, subject, isSecretWriteA
 
 // ── Drizzle client via D1 ───────────────────────────────────────────
 export { getDb }
-
-// ── OAuth client registration ───────────────────────────────────────
-// Registers this instance with the provider via RFC 7591 dynamic client
-// registration on first request for a hostname, then caches the client_id by
-// hostname.
-
-function getRequestOrigin(request: Request): string {
-  const publicOrigin = getPublicOriginOverride(request)
-  if (publicOrigin) {
-    return publicOrigin
-  }
-
-  return new URL(request.url).origin
-}
-
-function isLocalHost(hostname: string): boolean {
-  return hostname === 'localhost' || hostname === '127.0.0.1'
-}
-
-function originFromHost(host: string, protocol = 'https'): string {
-  const hostname = host.split(':')[0] ?? host
-  const safeProtocol = protocol === 'http' || protocol === 'https' ? protocol : 'https'
-  const scheme = isLocalHost(hostname) ? 'http' : safeProtocol
-  return `${scheme}://${host}`
-}
-
-// IMPORTANT: This function MUST only run when request.url is localhost.
-// The isLocalHost guard below is critical for security. In production,
-// Cloudflare Workers set request.url to the real hostname (e.g. sigillo.dev),
-// so this function returns null immediately and never reads forwarded headers.
-//
-// If this guard were removed, an attacker could inject X-Forwarded-Host: evil.com
-// to make BetterAuth set baseURL and trustedOrigins to evil.com, redirecting
-// the OAuth callback there and stealing the user's auth code/credentials.
-//
-// This override only exists for local dev behind a tunnel (e.g. traforo),
-// where request.url is localhost but the real public URL is the tunnel domain.
-function getPublicOriginOverride(request: Request): string | null {
-  const requestUrl = new URL(request.url)
-  if (!isLocalHost(requestUrl.hostname)) {
-    return null
-  }
-
-  const forwardedHost = request.headers.get('x-forwarded-host')
-  if (forwardedHost) {
-    const host = forwardedHost.split(',')[0]!.trim().toLowerCase()
-    const protocol = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase()
-    return originFromHost(host, protocol)
-  }
-
-  const origin = request.headers.get('origin')
-  if (origin) {
-    const originUrl = new URL(origin)
-    if (!isLocalHost(originUrl.hostname)) {
-      return originUrl.origin
-    }
-  }
-
-  const referer = request.headers.get('referer')
-  if (referer) {
-    const refererUrl = new URL(referer)
-    if (!isLocalHost(refererUrl.hostname)) {
-      return refererUrl.origin
-    }
-  }
-
-  const traforoUrl = process.env.TRAFORO_URL
-  if (!traforoUrl) {
-    return null
-  }
-
-  return traforoUrl
-}
-
-// ── BetterAuth (session validation only) ────────────────────────────
-// App login is Firebase (see auth.ts). BetterAuth is retained ONLY to (a) let
-// the vitest harness create users + bearer tokens via emailAndPassword, and
-// (b) validate not-yet-expired legacy sessions during the transition. No OAuth
-// provider, no dynamic client registration.
-export async function getAuth(request: Request) {
-  const db = getDb()
-  const origin = getRequestOrigin(request)
-  return betterAuth({
-    baseURL: origin,
-    secret: env.BETTER_AUTH_SECRET,
-    database: drizzleAdapter(db, { provider: 'sqlite' }),
-    trustedOrigins: [origin],
-    // Enabled only under vitest so tests can create users + bearer tokens.
-    // No-op in production.
-    emailAndPassword: { enabled: !!process.env.VITEST },
-    session: {
-      cookieCache: { enabled: true, maxAge: 5 * 60 },
-    },
-    plugins: [bearer()],
-  })
-}
 
 // ── Data center location ────────────────────────────────────────────
 
@@ -144,28 +43,8 @@ export function getSession(request: Request): Promise<Session | null> {
 }
 
 async function resolveSession(request: Request): Promise<Session | null> {
-  // Native Firebase-backed session (sig_session cookie) takes precedence.
-  const native = await getSessionFromRequest(request)
-  if (native) return native
-
-  // Legacy BetterAuth fallback — ONLY when a BetterAuth credential is actually
-  // present (Authorization bearer or a better-auth cookie). This avoids calling
-  // getAuth() for ordinary requests (e.g. theme/banner cookies), so retiring the
-  // provider can't add latency or errors to normal page loads. Wrapped in
-  // try/catch so a removed provider degrades to "logged out", never a 500.
-  const cookieHeader = request.headers.get('cookie') ?? ''
-  const hasLegacyCredential =
-    request.headers.has('authorization') || /better-auth|session_token/i.test(cookieHeader)
-  if (!hasLegacyCredential) return null
-
-  try {
-    const auth = await getAuth(request)
-    const session = await auth.api.getSession({ headers: request.headers })
-    if (!session) return null
-    return { userId: session.user.id, user: { id: session.user.id, name: session.user.name, email: session.user.email } }
-  } catch {
-    return null
-  }
+  // Native session only: `sig_session` cookie or Authorization: Bearer.
+  return getSessionFromRequest(request)
 }
 
 export async function requireApiSession(request: Request): Promise<Session> {

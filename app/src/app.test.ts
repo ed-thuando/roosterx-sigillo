@@ -14,30 +14,21 @@
 import { describe, test, expect, beforeAll } from 'vitest'
 import { createSpiceflowFetch } from 'spiceflow/client'
 import { app } from './app.js'
-import { getAuth, encrypt, decrypt, deriveSecrets, deriveEnvironmentSecretsAndNames, generateApiToken, getDb, getUserAbility } from './db.js'
+import { encrypt, decrypt, deriveSecrets, deriveEnvironmentSecretsAndNames, generateApiToken, getDb, getUserAbility } from './db.js'
+import { createSession } from './auth.js'
 import { subject } from './ability.ts'
 import { schema } from 'db'
 import { eq, sql } from 'drizzle-orm'
 
 // ── Test helpers ────────────────────────────────────────────────────
 
-let cachedAuth: Awaited<ReturnType<typeof getAuth>> | null = null
-
-async function getTestAuth() {
-  if (!cachedAuth) {
-    cachedAuth = await getAuth(new Request('http://e.ly'))
-  }
-  return cachedAuth
-}
-
 async function createTestUser(overrides?: { email?: string; name?: string }) {
   const email = overrides?.email ?? `test-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`
   const name = overrides?.name ?? 'Test User'
-  const auth = await getTestAuth()
-  const res = await auth.api.signUpEmail({
-    body: { email, name, password: 'test-password-123' },
-  })
-  return { user: res.user, token: res.token! }
+  const db = getDb()
+  const [user] = await db.insert(schema.user).values({ email, name, emailVerified: true }).returning()
+  const token = await createSession(user!.id)
+  return { user: user!, token }
 }
 
 /** Throw if Error, return the success result */

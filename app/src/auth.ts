@@ -142,14 +142,7 @@ export async function createSessionFromIdToken(request: Request, idToken: string
     userId = row!.id
   }
 
-  const token = randomToken(32)
-  await db.insert(schema.session).values({
-    userId,
-    token,
-    expiresAt: Date.now() + SESSION_TTL_MS,
-    ipAddress: request.headers.get('cf-connecting-ip'),
-    userAgent: request.headers.get('user-agent'),
-  })
+  const token = await createSession(userId, request)
 
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,
@@ -160,9 +153,26 @@ export async function createSessionFromIdToken(request: Request, idToken: string
   })
 }
 
+// Create a D1-backed session for a user; returns the opaque session token.
+export async function createSession(userId: string, request?: Request): Promise<string> {
+  const token = randomToken(32)
+  await getDb().insert(schema.session).values({
+    userId,
+    token,
+    expiresAt: Date.now() + SESSION_TTL_MS,
+    ipAddress: request?.headers.get('cf-connecting-ip') ?? null,
+    userAgent: request?.headers.get('user-agent') ?? null,
+  })
+  return token
+}
+
 // ── session resolution (used by db.ts guards) ───────────────────────
+// Accepts the session token from the `sig_session` cookie OR an
+// `Authorization: Bearer <token>` header (used by API clients + tests).
 export async function getSessionFromRequest(request: Request): Promise<Session | null> {
-  const token = parseCookies(request)[SESSION_COOKIE]
+  const authz = request.headers.get('authorization')
+  const bearer = authz && authz.startsWith('Bearer ') ? authz.slice(7).trim() : null
+  const token = parseCookies(request)[SESSION_COOKIE] ?? bearer
   if (!token) return null
   const db = getDb()
   const row = await db.query.session.findFirst({ where: { token } })
