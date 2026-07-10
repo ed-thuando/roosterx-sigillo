@@ -21,6 +21,7 @@ import {
   deriveEnvironmentSecretsAndNames,
   safeDecrypt,
 } from './db.ts'
+import { createSessionFromIdToken, signOutRequest } from './auth.ts'
 import { subject, canReadProject, filterReadableEnvironments } from './ability.ts'
 import { apiApp } from './api.ts'
 import { cn } from 'sigillo-app/src/lib/utils'
@@ -82,6 +83,29 @@ export const app = new Spiceflow()
       if (res.ok || res.status !== 404) return res
     }
     return next()
+  })
+
+  // ── Native auth (Firebase Google sign-in → own D1 session) ──────
+  // Frontend does Firebase signInWithPopup, then POSTs the ID token here.
+  .route({
+    method: 'POST',
+    path: '/auth/session',
+    detail: { hide: true },
+    async handler({ request }) {
+      const body = (await request.json().catch(() => null)) as { idToken?: string } | null
+      if (!body?.idToken) {
+        return new Response(JSON.stringify({ error: 'missing idToken' }), { status: 400, headers: { 'content-type': 'application/json' } })
+      }
+      return createSessionFromIdToken(request, body.idToken)
+    },
+  })
+  .route({
+    method: 'POST',
+    path: '/auth/signout',
+    detail: { hide: true },
+    handler({ request }) {
+      return signOutRequest(request)
+    },
   })
 
   // ── Layout: Dashboard routes (HTML shell + sidebar chrome) ──────

@@ -15,6 +15,7 @@ import { genericOAuth, deviceAuthorization, bearer } from 'better-auth/plugins'
 import { drizzleAdapter } from 'better-auth-drizzle-adapter'
 import { redirect } from 'spiceflow'
 import { memoize } from './lib/memoize.ts'
+import { getSessionFromRequest } from './auth.ts'
 import { buildAbility, grantsFromMembership, tokenGrant, subject, isSecretWriteAction, type AppAbility, type SecretAction, type EnvMeta } from './ability.ts'
 
 // ── Drizzle client via D1 ───────────────────────────────────────────
@@ -274,6 +275,12 @@ export function getSession(request: Request): Promise<Session | null> {
 }
 
 async function resolveSession(request: Request): Promise<Session | null> {
+  // Native Firebase-backed session (sig_session cookie) takes precedence.
+  // Falls through to BetterAuth so existing sessions keep working during the
+  // migration — no lockout. Remove the BetterAuth path once cutover is verified.
+  const native = await getSessionFromRequest(request)
+  if (native) return native
+
   const hasCookie = request.headers.has('cookie')
   const hasAuthorization = request.headers.has('authorization')
   if (!hasCookie && !hasAuthorization) {
