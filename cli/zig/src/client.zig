@@ -33,42 +33,65 @@ pub fn request(args: RequestArgs) !ApiResult {
     var http_client: std.http.Client = .{ .allocator = args.allocator };
     defer http_client.deinit();
 
-    var response_body: std.io.Writer.Allocating = .init(args.allocator);
-    defer response_body.deinit();
+    const uri = try std.Uri.parse(url);
 
-    const accept_header = [_]std.http.Header{.{ .name = "accept", .value = args.accept }};
     var headers: std.http.Client.Request.Headers = .{};
     if (args.json_body != null) {
         headers.content_type = .{ .override = "application/json" };
     }
 
-    const result = if (args.token) |value| blk: {
-        const auth_header = try std.fmt.allocPrint(args.allocator, "Bearer {s}", .{value});
-        defer args.allocator.free(auth_header);
+    // Build extra headers: accept always, plus Bearer auth when a token is set.
+    var hdr_buf: [2]std.http.Header = undefined;
+    var hdr_len: usize = 0;
+    hdr_buf[hdr_len] = .{ .name = "accept", .value = args.accept };
+    hdr_len += 1;
+    var auth_header: ?[]u8 = null;
+    defer if (auth_header) |a| args.allocator.free(a);
+    if (args.token) |value| {
+        auth_header = try std.fmt.allocPrint(args.allocator, "Bearer {s}", .{value});
+        hdr_buf[hdr_len] = .{ .name = "authorization", .value = auth_header.? };
+        hdr_len += 1;
+    }
 
-        const extra_headers = [_]std.http.Header{
-            .{ .name = "authorization", .value = auth_header },
-            accept_header[0],
-        };
-        break :blk try http_client.fetch(.{
-            .location = .{ .url = url },
-            .method = args.method,
-            .payload = args.json_body,
-            .headers = headers,
-            .extra_headers = &extra_headers,
-            .response_writer = &response_body.writer,
-        });
-    } else try http_client.fetch(.{
-        .location = .{ .url = url },
-        .method = args.method,
-        .payload = args.json_body,
+    // NOTE: std.http.Client.fetch mis-sends POST bodies in zig 0.15.x (server
+    // resets the connection → error.ReadFailed). Use the low-level request +
+    // sendBodyComplete, which frames the body correctly.
+    var req = try http_client.request(args.method, uri, .{
         .headers = headers,
-        .extra_headers = &accept_header,
-        .response_writer = &response_body.writer,
+        .extra_headers = hdr_buf[0..hdr_len],
+        .keep_alive = false,
     });
+    defer req.deinit();
+
+    if (args.json_body) |body| {
+        req.transfer_encoding = .{ .content_length = body.len };
+        const mut = try args.allocator.dupe(u8, body);
+        defer args.allocator.free(mut);
+        try req.sendBodyComplete(mut);
+    } else {
+        try req.sendBodiless();
+    }
+
+    var redirect_buffer: [16 * 1024]u8 = undefined;
+    var response = try req.receiveHead(&redirect_buffer);
+
+    var transfer_buffer: [64]u8 = undefined;
+    var decompress: std.http.Decompress = undefined;
+    const decompress_buffer: []u8 = switch (response.head.content_encoding) {
+        .zstd => try args.allocator.alloc(u8, std.compress.zstd.default_window_len),
+        .deflate, .gzip => try args.allocator.alloc(u8, std.compress.flate.max_window_len),
+        else => &.{},
+    };
+    defer if (decompress_buffer.len > 0) args.allocator.free(decompress_buffer);
+
+    var response_body: std.io.Writer.Allocating = .init(args.allocator);
+    defer response_body.deinit();
+
+    const reader = response.readerDecompressing(&transfer_buffer, &decompress, decompress_buffer);
+    _ = try reader.streamRemaining(&response_body.writer);
 
     return .{
-        .status = @intFromEnum(result.status),
+        .status = @intFromEnum(response.head.status),
         .body = try args.allocator.dupe(u8, response_body.written()),
     };
 }
