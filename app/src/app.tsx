@@ -21,7 +21,7 @@ import {
   deriveEnvironmentSecretsAndNames,
   safeDecrypt,
 } from './db.ts'
-import { createSessionFromIdToken, signOutRequest } from './auth.ts'
+import { createSessionFromIdToken, signOutRequest, createDeviceCode, pollDeviceToken, approveDeviceCode } from './auth.ts'
 import { subject, canReadProject, filterReadableEnvironments } from './ability.ts'
 import { apiApp } from './api.ts'
 import { cn } from 'sigillo-app/src/lib/utils'
@@ -41,7 +41,7 @@ function isTruthy<T>(value: T | null | undefined): value is T {
 // avoids sending logged-in users to API routes or obvious 404s.
 function safeRedirectPath(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dash'
-  if (value === '/') return value
+  if (value === '/' || value.startsWith('/device')) return value
   if (value === '/dash' || value.startsWith('/dash/') || value.startsWith('/invite/')) return value
   return '/'
 }
@@ -95,6 +95,47 @@ export const app = new Spiceflow()
     },
   })
 
+  // ── Device authorization (RFC 8628) for the CLI `sigillo login` ──
+  .route({
+    method: 'POST',
+    path: '/api/auth/device/code',
+    detail: { hide: true },
+    async handler({ request }) {
+      const body = (await request.json().catch(() => null)) as { client_id?: string } | null
+      const res = await createDeviceCode(new URL(request.url).origin, body?.client_id ?? null)
+      return new Response(JSON.stringify(res), { headers: { 'content-type': 'application/json' } })
+    },
+  })
+  .route({
+    method: 'POST',
+    path: '/api/auth/device/token',
+    detail: { hide: true },
+    async handler({ request }) {
+      const body = (await request.json().catch(() => null)) as { device_code?: string } | null
+      if (!body?.device_code) {
+        return new Response(JSON.stringify({ error: 'invalid_request' }), { status: 400, headers: { 'content-type': 'application/json' } })
+      }
+      const r = await pollDeviceToken(body.device_code)
+      if ('error' in r) {
+        return new Response(JSON.stringify({ error: r.error }), { status: 400, headers: { 'content-type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ access_token: r.accessToken, token_type: 'Bearer' }), { headers: { 'content-type': 'application/json' } })
+    },
+  })
+  .route({
+    method: 'POST',
+    path: '/api/auth/device/approve',
+    detail: { hide: true },
+    async handler({ request }) {
+      const session = await getSession(request)
+      if (!session) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } })
+      const body = (await request.json().catch(() => null)) as { user_code?: string } | null
+      if (!body?.user_code) return new Response(JSON.stringify({ error: 'invalid_request' }), { status: 400, headers: { 'content-type': 'application/json' } })
+      const ok = await approveDeviceCode(body.user_code, session.userId)
+      return new Response(JSON.stringify({ ok }), { status: ok ? 200 : 400, headers: { 'content-type': 'application/json' } })
+    },
+  })
+
   // ── Layout: Dashboard routes (HTML shell + sidebar chrome) ──────
   // No global layout('/*') because holocron provides its own HTML shell
   // for docs pages (/). Each route group registers AppShell separately.
@@ -109,6 +150,7 @@ export const app = new Spiceflow()
 
   // ── Layout: Standalone pages (login, invite, new-org) ──
   .layout('/login', async ({ children, request }) => <AppShell request={request}>{children}</AppShell>)
+  .layout('/device', async ({ children, request }) => <AppShell request={request}>{children}</AppShell>)
   .layout('/invite/*', async ({ children, request }) => <AppShell request={request}>{children}</AppShell>)
 
   .loader('/dash/*', async ({ request }) => {
@@ -601,6 +643,19 @@ export const app = new Spiceflow()
         </div>
       </ContentFrame>
     )
+  })
+
+  // ── Device approval page (CLI `sigillo login`) — Firebase-gated ──
+  .page('/device', async ({ request }) => {
+    const session = await getSession(request)
+    if (!session) {
+      const url = new URL(request.url)
+      const back = encodeURIComponent('/device' + url.search)
+      return Response.redirect(new URL(`/login?redirect=${back}`, request.url).toString(), 302)
+    }
+    const userCode = new URL(request.url).searchParams.get('user_code') ?? ''
+    const { DeviceFlow } = await import('sigillo-app/src/components/device-flow')
+    return <ContentFrame><DeviceFlow initialCode={userCode} /></ContentFrame>
   })
 
   // ── Invite accept page (standalone, no sidebar) ────────────────

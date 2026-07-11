@@ -10,3 +10,4 @@ tmp
 zig-out
 dummy-non-existing-folder
 app/wrangler.jsonc
+cli/zig-pkg/

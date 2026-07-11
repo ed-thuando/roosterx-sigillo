@@ -213,3 +213,69 @@ export async function signOutRequest(request: Request): Promise<Response> {
   }
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers })
 }
+
+// ── Device authorization flow (RFC 8628) for the CLI ────────────────
+// `sigillo login`: CLI calls /api/auth/device/code, user approves at /device
+// (gated by Firebase login → only your org can approve), CLI polls
+// /api/auth/device/token for the resulting native session token.
+const DEVICE_CODE_TTL_MS = 10 * 60 * 1000
+const DEVICE_POLL_INTERVAL = 5
+// Unambiguous alphabet (no 0/O/1/I) for the human-entered user_code.
+const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ23456789'
+
+function genUserCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8))
+  let s = ''
+  for (let i = 0; i < 8; i++) {
+    s += USER_CODE_ALPHABET[bytes[i]! % USER_CODE_ALPHABET.length]
+    if (i === 3) s += '-'
+  }
+  return s
+}
+
+export async function createDeviceCode(origin: string, clientId: string | null) {
+  const deviceCode = randomToken(32)
+  const userCode = genUserCode()
+  await getDb().insert(schema.deviceCode).values({
+    deviceCode,
+    userCode,
+    status: 'pending',
+    expiresAt: Date.now() + DEVICE_CODE_TTL_MS,
+    pollingInterval: DEVICE_POLL_INTERVAL,
+    clientId,
+  })
+  return {
+    device_code: deviceCode,
+    user_code: userCode,
+    verification_uri: `${origin}/device`,
+    verification_uri_complete: `${origin}/device?user_code=${encodeURIComponent(userCode)}`,
+    expires_in: DEVICE_CODE_TTL_MS / 1000,
+    interval: DEVICE_POLL_INTERVAL,
+  }
+}
+
+// CLI polls this. On approval, mints a native session token + consumes the code.
+export async function pollDeviceToken(deviceCode: string): Promise<{ ok: true; accessToken: string } | { error: string }> {
+  const db = getDb()
+  const row = await db.query.deviceCode.findFirst({ where: { deviceCode } })
+  if (!row) return { error: 'expired_token' }
+  if (row.expiresAt < Date.now()) {
+    await db.delete(schema.deviceCode).where(eq(schema.deviceCode.deviceCode, deviceCode))
+    return { error: 'expired_token' }
+  }
+  if (row.status === 'denied') return { error: 'access_denied' }
+  if (row.status !== 'approved' || !row.userId) return { error: 'authorization_pending' }
+  const accessToken = await createSession(row.userId)
+  await db.delete(schema.deviceCode).where(eq(schema.deviceCode.deviceCode, deviceCode))
+  return { ok: true, accessToken }
+}
+
+// Called from the /device page (requires a logged-in session).
+export async function approveDeviceCode(userCode: string, userId: string): Promise<boolean> {
+  const db = getDb()
+  const normalized = userCode.trim().toUpperCase()
+  const row = await db.query.deviceCode.findFirst({ where: { userCode: normalized } })
+  if (!row || row.status !== 'pending' || row.expiresAt < Date.now()) return false
+  await db.update(schema.deviceCode).set({ status: 'approved', userId }).where(eq(schema.deviceCode.id, row.id))
+  return true
+}
