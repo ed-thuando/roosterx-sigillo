@@ -34,7 +34,7 @@ export function DeviceFlow({ initialCode = "" }: { initialCode?: string }) {
 
   if (status === "approved") {
     return (
-      <div className="flex flex-col items-center gap-3 py-12 text-center">
+      <div className="flex flex-col items-center gap-3 py-4 text-center">
         <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
           <CheckIcon className="size-6" />
         </div>
@@ -45,7 +45,7 @@ export function DeviceFlow({ initialCode = "" }: { initialCode?: string }) {
   }
 
   return (
-    <div className="mx-auto flex max-w-sm flex-col gap-4 py-12">
+    <div className="mx-auto flex w-full max-w-sm flex-col gap-4">
       <div className="text-center">
         <h1 className="text-xl font-semibold tracking-tight">Approve CLI login</h1>
         <p className="mt-1 text-sm text-muted-foreground">

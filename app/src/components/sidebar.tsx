@@ -93,7 +93,7 @@ function SidebarContent({
       <DropdownMenu>
         <DropdownMenuTrigger
           className={cn(
-            "flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-sidebar-accent data-[popup-open]:bg-sidebar-accent",
+            "flex h-12 w-full items-center gap-2 rounded-lg px-3 text-sm transition-colors hover:bg-default-soft data-[popup-open]:bg-default-soft",
           )}
         >
           <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -140,9 +140,9 @@ function SidebarContent({
       </DropdownMenu>
 
       {/* ── Projects ─────────────────────────────────────────── */}
-      <div className="flex-1 overflow-auto pt-4">
-        <div className="mb-1 pl-2">
-          <span className="text-xs font-medium text-muted-foreground">
+      <div className="flex-1 overflow-auto pt-2">
+        <div className="flex h-9 items-center px-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Projects
           </span>
         </div>
@@ -157,8 +157,8 @@ function SidebarContent({
                 href={href}
                 onClick={onNavigate}
                 className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent",
-                  isActive && "bg-sidebar-accent text-primary font-medium",
+                  "flex h-8 items-center gap-2 rounded-lg px-2 text-sm transition-colors hover:bg-default-soft",
+                  isActive && "bg-default-soft font-medium",
                 )}
               >
                 {isActive ? (
@@ -173,14 +173,14 @@ function SidebarContent({
           {currentOrgId && (
             <button
               onClick={() => setShowNewProject(true)}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground cursor-pointer"
+              className="flex h-8 items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-default-soft hover:text-foreground cursor-pointer"
             >
               <PlusIcon className="size-4 shrink-0 opacity-60" />
               New project
             </button>
           )}
           {!currentOrgId && (
-            <p className="text-xs text-muted-foreground px-2 py-1.5">
+            <p className="flex h-8 items-center px-2 text-xs text-muted-foreground">
               Select an org first
             </p>
           )}
@@ -188,14 +188,14 @@ function SidebarContent({
       </div>
 
       {/* ── User footer ──────────────────────────────────────── */}
-      <div className="border-t border-sidebar-border pt-4">
-        <div className="mb-3 px-2">
+      <div className="-mx-2 mt-2 border-t border-sidebar-border px-2 pt-2">
+        <div className="mb-2 px-2">
           <ThemeSelect />
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger
             className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-sidebar-accent data-[popup-open]:bg-sidebar-accent",
+              "flex h-14 w-full items-center gap-2 rounded-lg px-3 text-sm transition-colors hover:bg-default-soft data-[popup-open]:bg-default-soft",
             )}
           >
             <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground font-medium text-xs">
@@ -255,7 +255,7 @@ function SidebarContent({
 
 export function Sidebar() {
   return (
-    <aside className="hidden md:flex flex-col w-72 self-stretch min-h-0 border-r border-sidebar-border bg-background text-foreground p-6">
+    <aside className="hidden md:flex flex-col w-72 self-stretch min-h-0 bg-background text-foreground p-2">
       <SidebarContent />
     </aside>
   );
@@ -281,7 +281,7 @@ export function MobileDrawer() {
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40 md:hidden" />
         <Drawer.Content
-          className="fixed inset-y-0 left-0 z-50 w-72 flex flex-col bg-background border-r border-sidebar-border p-6 md:hidden outline-none"
+          className="fixed inset-y-0 left-0 z-50 w-72 flex flex-col bg-background border-r border-sidebar-border p-2 md:hidden outline-none"
           aria-describedby={undefined}
         >
           <Drawer.Title className="sr-only">Navigation</Drawer.Title>
@@ -362,7 +362,7 @@ export function NewProjectDialog({
 export function MobileMenuButton() {
   return (
     <button
-      className="md:hidden flex items-center justify-center size-9 rounded-md hover:bg-accent transition-colors cursor-pointer"
+      className="md:hidden flex items-center justify-center size-9 rounded-md hover:bg-default-soft transition-colors cursor-pointer"
       onClick={() => window.dispatchEvent(new CustomEvent("sigillo:toggle-drawer"))}
       aria-label="Open menu"
     >

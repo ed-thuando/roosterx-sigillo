@@ -13,8 +13,8 @@ export function Input({
   return (
     <input
       className={cn(
-        "rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-1 focus:ring-ring",
-        inputSize === "sm" ? "h-7 px-2" : "h-9 px-3",
+        "input border border-border-secondary shadow-none text-sm",
+        inputSize === "sm" ? "h-7 px-2 py-0.5" : "h-9 px-3",
         className,
       )}
       {...props}
@@ -29,7 +29,7 @@ export function Textarea({
   return (
     <textarea
       className={cn(
-        "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring resize-y",
+        "input border border-border-secondary shadow-none w-full px-3 py-2 text-sm resize-y",
         className,
       )}
       {...props}

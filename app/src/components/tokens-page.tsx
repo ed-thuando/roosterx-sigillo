@@ -33,7 +33,7 @@ export function TokensPage() {
   return (
     <>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">{projectName}</h1>
+        <h1 className="text-lg font-semibold tracking-tight">{projectName}</h1>
         <Button variant="outline" onClick={() => setCreateOpen(true)}>
           <PlusIcon className="size-4" />
           Create token

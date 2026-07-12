@@ -38,16 +38,16 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8 w-full max-w-2xl">
+    <div className="flex flex-col gap-6 w-full max-w-2xl">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Manage your organization settings.
         </p>
       </div>
 
-      <div className="rounded-lg border border-destructive/40">
-        <div className="p-5">
+      <div className="rounded-2xl border border-(--danger-soft) bg-(--danger-soft)/30">
+        <div className="p-4">
           <h2 className="text-lg font-semibold text-destructive flex items-center gap-2">
             <AlertTriangleIcon className="size-5" />
             Danger Zone
@@ -57,7 +57,7 @@ export function SettingsPage() {
             tokens, and access grants will be removed immediately.
           </p>
         </div>
-        <div className="border-t border-destructive/40 px-5 py-4 bg-destructive/5 rounded-b-lg flex items-center justify-between">
+        <div className="border-t border-(--danger-soft) p-4 flex items-center justify-between">
           <div>
             <p className="text-sm font-medium">Delete project</p>
             <p className="text-xs text-muted-foreground">
@@ -104,8 +104,8 @@ export function SettingsPage() {
       </div>
 
       {isOrgAdmin && (
-      <div className="rounded-lg border border-destructive/40">
-        <div className="p-5">
+      <div className="rounded-2xl border border-(--danger-soft) bg-(--danger-soft)/30">
+        <div className="p-4">
           <h2 className="text-lg font-semibold text-destructive flex items-center gap-2">
             <AlertTriangleIcon className="size-5" />
             Danger Zone
@@ -115,7 +115,7 @@ export function SettingsPage() {
             secrets, tokens, and member access will be removed immediately.
           </p>
         </div>
-        <div className="border-t border-destructive/40 px-5 py-4 bg-destructive/5 rounded-b-lg flex items-center justify-between">
+        <div className="border-t border-(--danger-soft) p-4 flex items-center justify-between">
           <div>
             <p className="text-sm font-medium">Delete organization</p>
             <p className="text-xs text-muted-foreground">

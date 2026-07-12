@@ -95,7 +95,7 @@ export function AccessPage() {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Project access</h2>
@@ -471,7 +471,7 @@ function EnvHeader({
       {canWriteEnv ? (
         <DropdownMenu>
           <DropdownMenuTrigger
-            className="flex size-7 items-center justify-center rounded-md hover:bg-accent"
+            className="flex size-7 items-center justify-center rounded-md hover:bg-default-soft"
             aria-label={`Manage ${env.name}`}
           >
             <MoreVerticalIcon className="size-4" />

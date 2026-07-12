@@ -44,14 +44,14 @@ function CliBanner() {
   if (!open) return null;
 
   return (
-    <FramePanel className="relative overflow-hidden border-border/70 bg-muted/45 p-4 sm:p-8">
+    <FramePanel className="relative overflow-hidden border-border bg-surface-secondary/50 p-4 sm:p-8">
       <button
         type="button"
         onClick={() => {
           document.cookie = `${cliBannerCookieName}=1; Path=/; Max-Age=31536000; SameSite=Lax`;
           setOpen(false);
         }}
-        className="absolute right-0.5 top-0.5 z-10 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="absolute right-0.5 top-0.5 z-10 rounded-md p-1 text-muted-foreground transition-colors hover:bg-default-soft hover:text-foreground"
         aria-label="Dismiss CLI banner"
         title="Dismiss"
       >
@@ -68,7 +68,7 @@ function CliBanner() {
           </p>
         </div>
 
-        <pre className="cli-banner-code overflow-x-auto rounded-xl border border-border/70 bg-background/95 p-4 text-[12px]">
+        <pre className="cli-banner-code overflow-x-auto rounded-xl border border-border bg-surface p-4 text-[12px]">
           <code className="block mono-sm">
             {cliBannerCodeLines.map((line, i) => (
               <span key={i} className="flex gap-x-4 leading-6">
@@ -97,7 +97,9 @@ export function ProjectPage() {
 
   return (
     <div className="flex flex-col gap-4 w-full">
-      <h1 className="text-2xl font-bold tracking-tight">{projectName}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold tracking-tight">{projectName}</h1>
+      </div>
 
       {showBanner && <CliBanner />}
 

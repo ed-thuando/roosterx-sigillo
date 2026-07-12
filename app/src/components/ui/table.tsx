@@ -77,7 +77,7 @@ export function TableRow({
   return (
     <tr
       className={cn(
-        "border-b transition-colors data-[state=selected]:bg-muted/72 in-data-[slot=frame]:data-[state=selected]:bg-transparent",
+        "border-b transition-colors hover:bg-default-soft/50 data-[state=selected]:bg-muted/72 in-data-[slot=frame]:data-[state=selected]:bg-transparent",
         className,
       )}
       data-slot="table-row"
@@ -93,7 +93,7 @@ export function TableHead({
   return (
     <th
       className={cn(
-        "h-10 whitespace-nowrap px-2.5 text-left align-middle font-medium text-muted-foreground leading-none has-[[role=checkbox]]:w-px has-[[role=checkbox]]:pe-0",
+        "h-10 whitespace-nowrap px-2.5 text-left align-middle font-medium text-muted text-xs uppercase tracking-wide leading-none has-[[role=checkbox]]:w-px has-[[role=checkbox]]:pe-0",
         className,
       )}
       data-slot="table-head"
@@ -109,7 +109,7 @@ export function TableCell({
   return (
     <td
       className={cn(
-        "whitespace-nowrap p-2.5 align-middle leading-none in-data-[slot=frame]:first:p-[calc(--spacing(2.5)-1px)] in-data-[slot=frame]:last:p-[calc(--spacing(2.5)-1px)] has-[[role=checkbox]]:pe-0",
+        "whitespace-nowrap px-2.5 py-2.5 align-middle leading-none in-data-[slot=frame]:first:p-[calc(--spacing(2.5)-1px)] in-data-[slot=frame]:last:p-[calc(--spacing(2.5)-1px)] has-[[role=checkbox]]:pe-0",
         className,
       )}
       data-slot="table-cell"

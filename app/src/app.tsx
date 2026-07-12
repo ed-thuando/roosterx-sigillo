@@ -253,21 +253,25 @@ export const app = new Spiceflow()
     const { Sidebar, MobileDrawer } = await import('sigillo-app/src/components/sidebar')
     const projectId = loaderData.projectId
     return (
-      <div className="isolate grow relative flex w-full">
+      <div className="isolate grow relative flex w-full min-h-0 bg-background md:h-svh">
         <Sidebar />
         <MobileDrawer />
-        <main className="flex-1 overflow-x-hidden overflow-y-auto min-w-0 px-4 pt-4 sm:px-6 lg:px-8">
-          {projectId && (
-            <div className="sticky top-0 z-30 -mx-4 mb-8 border-b border-border bg-background px-4 pt-4 pb-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-              <TabBar
-                projectId={projectId}
-                pathname={loaderData.pathname}
-                firstEnvSlug={loaderData.currentProjectFirstEnvSlug}
-              />
+        <div className="flex min-w-0 flex-1 flex-col p-2 md:pl-0">
+          <main className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            {projectId && (
+              <div className="sticky top-0 z-30 shrink-0 border-b border-border bg-card/80 px-4 backdrop-blur">
+                <TabBar
+                  projectId={projectId}
+                  pathname={loaderData.pathname}
+                  firstEnvSlug={loaderData.currentProjectFirstEnvSlug}
+                />
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-5">
+              {children}
             </div>
-          )}
-          {children}
-        </main>
+          </main>
+        </div>
       </div>
     )
   })
@@ -349,7 +353,7 @@ export const app = new Spiceflow()
 
     return (
       <div className="max-w-3xl">
-        <h1 className="text-2xl font-bold tracking-tight mb-2">No projects yet</h1>
+        <h1 className="text-lg font-semibold tracking-tight mb-2">No projects yet</h1>
         <p className="text-muted-foreground mb-6">Create your first project to start managing secrets.</p>
         <NewProjectButton orgId={params.orgId} />
       </div>
@@ -359,12 +363,16 @@ export const app = new Spiceflow()
   // ── New Organization page (standalone, no sidebar) ─────────────
   .page('/dash/new-org', async () => {
     return (
-      <div className="max-w-md mx-auto py-12">
-        <h1 className="text-2xl font-bold tracking-tight mb-2">New Organization</h1>
-        <p className="text-muted-foreground mb-6">
-          Organizations group your projects and team members.
-        </p>
-        <CreateOrgForm />
+      <div className="mx-auto w-full max-w-md py-12">
+        <div className="space-y-6 rounded-3xl border border-border bg-card p-8 shadow-sm">
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight mb-1">New Organization</h1>
+            <p className="text-sm text-muted-foreground">
+              Organizations group your projects and team members.
+            </p>
+          </div>
+          <CreateOrgForm />
+        </div>
       </div>
     )
   })
@@ -577,7 +585,7 @@ export const app = new Spiceflow()
     const { TokensPage } = await import('sigillo-app/src/components/tokens-page')
 
     return (
-      <div className="flex flex-col gap-3 w-full">
+      <div className="flex flex-col gap-4 w-full">
         <TokensPage />
       </div>
     )
@@ -615,7 +623,7 @@ export const app = new Spiceflow()
     const { SettingsPage } = await import('sigillo-app/src/components/settings-page')
 
     return (
-      <div className="flex flex-col gap-3 w-full">
+      <div className="flex flex-col gap-4 w-full">
         <SettingsPage />
       </div>
     )
@@ -635,10 +643,10 @@ export const app = new Spiceflow()
       projectId: process.env.FIREBASE_PROJECT_ID ?? '',
     }
     return (
-      <ContentFrame className="flex justify-center items-center min-h-[60vh]">
-        <div className="text-center max-w-sm">
-          <SigilloLogo className="h-[40px] w-auto mx-auto mb-2" />
-          <p className="text-muted-foreground mb-6">Sign in to manage your secrets</p>
+      <ContentFrame className="flex justify-center items-center min-h-[60vh] px-4">
+        <div className="w-full max-w-sm space-y-6 rounded-3xl border border-border bg-card p-8 shadow-sm text-center">
+          <SigilloLogo className="h-[40px] w-auto mx-auto" />
+          <p className="text-muted-foreground">Sign in to manage your secrets</p>
           <LoginButton callbackURL={redirectTo} firebaseConfig={firebaseConfig} />
         </div>
       </ContentFrame>
@@ -655,7 +663,13 @@ export const app = new Spiceflow()
     }
     const userCode = new URL(request.url).searchParams.get('user_code') ?? ''
     const { DeviceFlow } = await import('sigillo-app/src/components/device-flow')
-    return <ContentFrame><DeviceFlow initialCode={userCode} /></ContentFrame>
+    return (
+      <ContentFrame className="flex justify-center items-center min-h-[60vh] px-4">
+        <div className="w-full max-w-sm rounded-3xl border border-border bg-card p-8 shadow-sm">
+          <DeviceFlow initialCode={userCode} />
+        </div>
+      </ContentFrame>
+    )
   })
 
   // ── Invite accept page (standalone, no sidebar) ────────────────
@@ -667,9 +681,9 @@ export const app = new Spiceflow()
     })
     if (!invite || invite.expiresAt < Date.now()) {
       return (
-        <ContentFrame className="flex justify-center items-center min-h-[60vh]">
-          <div className="text-center max-w-sm">
-            <h1 className="text-2xl font-bold tracking-tight mb-2">Invalid Invitation</h1>
+        <ContentFrame className="flex justify-center items-center min-h-[60vh] px-4">
+          <div className="w-full max-w-sm space-y-2 rounded-3xl border border-border bg-card p-8 shadow-sm text-center">
+            <h1 className="text-lg font-semibold tracking-tight">Invalid Invitation</h1>
             <p className="text-muted-foreground">This invitation link is invalid or has expired.</p>
           </div>
         </ContentFrame>
@@ -687,8 +701,8 @@ export const app = new Spiceflow()
     if (existing) return redirect(`/dash/orgs/${encodeURIComponent(invite.orgId)}`)
     const { AcceptInviteButton } = await import('sigillo-app/src/components/accept-invite-button')
     return (
-      <ContentFrame className="flex justify-center items-center min-h-[60vh]">
-        <div className="text-center max-w-sm space-y-4">
+      <ContentFrame className="flex justify-center items-center min-h-[60vh] px-4">
+        <div className="w-full max-w-sm space-y-4 rounded-3xl border border-border bg-card p-8 shadow-sm text-center">
           <h1 className="text-2xl font-bold tracking-tight">Join {invite.org!.name}</h1>
           <p className="text-muted-foreground text-sm">
             <span className="font-medium text-foreground">{invite.creator!.name}</span> invited you to join this organization.
@@ -736,7 +750,7 @@ function AppShell({ children, mobileMenuSlot, request }: { children: React.React
       <body className="relative flex flex-col min-h-screen bg-background font-sans antialiased">
         <script dangerouslySetInnerHTML={{ __html: appThemeScript }} />
         <script dangerouslySetInnerHTML={{ __html: chunkReloadScript }} />
-        <ProgressBar color="var(--primary)" />
+        <ProgressBar color="var(--accent)" />
         <Navbar mobileMenuSlot={mobileMenuSlot} />
         {children ?? (
           <div className="max-w-(--content-max-width) mx-auto w-full flex items-center justify-center text-muted-foreground py-12">

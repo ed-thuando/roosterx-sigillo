@@ -28,6 +28,7 @@
     "@ascii-kit/fonts-flf": "^0.0.6",
     "@base-ui/react": "^1.4.0",
     "@casl/ability": "^6.7.3",
+    "@heroui/styles": "3.2.2",
     "@holocron.so/vite": "^0.23.0",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-table": "^8.21.3",

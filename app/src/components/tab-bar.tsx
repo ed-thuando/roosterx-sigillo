@@ -48,7 +48,7 @@ export function TabBar({
 
   return (
     <div className="max-w-(--content-max-width) mx-auto w-full">
-      <div className="flex h-10 items-stretch gap-4 sm:gap-6 px-4 sm:px-6 overflow-x-auto scrollbar-hide">
+      <div className="flex h-12 items-stretch gap-1 overflow-x-auto scrollbar-hide">
         {tabs.map((tab) => {
           const isActive = pendingHref ? pendingHref === tab.href : tab.active;
           return (
@@ -57,7 +57,7 @@ export function TabBar({
               href={tab.href}
               onClick={() => setPendingHref(tab.href)}
               className={cn(
-                "relative flex items-center shrink-0 whitespace-nowrap text-sm no-underline transition-colors duration-150",
+                "relative flex items-center shrink-0 whitespace-nowrap px-3 text-sm no-underline transition-colors duration-150",
                 isActive
                   ? "font-medium text-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -65,7 +65,7 @@ export function TabBar({
             >
               {tab.label}
               {isActive && (
-                <div className="absolute bottom-0 left-0 w-full h-[2.5px] bg-primary rounded-sm" />
+                <div className="absolute bottom-0 inset-x-3 h-0.5 rounded-full bg-primary" />
               )}
             </Link>
           );
