@@ -178,8 +178,8 @@ download_with_progress() {
 }
 
 download_and_install() {
-  print_message info "\n${MUTED}Installing ${NC}sigillo"
-  local tmp_install_dir="sigillotmp_$$"
+  print_message info "\n${MUTED}Installing ${NC}rx"
+  local tmp_install_dir="rxtmp_$$"
   mkdir -p "$tmp_install_dir" && cd "$tmp_install_dir"
 
   trap "cd .. 2>/dev/null; rm -rf \"$tmp_install_dir\"" EXIT
@@ -221,9 +221,9 @@ add_to_path() {
   if grep -Fxq "$command" "$config_file"; then
     print_message info "Command already exists in $config_file, skipping write."
   elif [[ -w $config_file ]]; then
-    echo -e "\n# sigillo" >> "$config_file"
+    echo -e "\n# rx" >> "$config_file"
     echo "$command" >> "$config_file"
-    print_message info "${MUTED}Successfully added ${NC}sigillo ${MUTED}to \$PATH in ${NC}$config_file"
+    print_message info "${MUTED}Successfully added ${NC}rx ${MUTED}to \$PATH in ${NC}$config_file"
   else
     print_message warning "Manually add the directory to $config_file (or similar):"
     print_message info "  $command"
@@ -297,7 +297,7 @@ echo -e "8    dP Yb "
 echo -e "           "
 echo -e ""
 echo -e "cd <project>  ${MUTED}# Open directory${NC}"
-echo -e "sigillo      ${MUTED}# Run command${NC}"
+echo -e "rx      ${MUTED}# Run command${NC}"
 echo -e ""
 echo -e "${MUTED}For more information visit ${NC}https://github.com/ed-thuando/roosterx-sigillo"
 echo -e ""
