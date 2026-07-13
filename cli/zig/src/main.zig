@@ -1,4 +1,4 @@
-// Sigillo CLI.
+// rx CLI.
 // Minimal Doppler-like commands for self-hosted secret access.
 
 const std = @import("std");
@@ -84,7 +84,7 @@ fn needsInteractivePrompt(has_value: bool, stdin_is_tty: bool) bool {
 
 const Global = zeke.globalOpts()
     .option("--token [token]", "Auth token override")
-    .option("--api-url [url]", "API URL override (default: https://sigillo.dev)");
+    .option("--api-url [url]", "API URL override (default: https://env.shotpix.app)");
 
 fn printChildScopes(
     allocator: std.mem.Allocator,
@@ -94,7 +94,7 @@ fn printChildScopes(
     const children = config.findChildScopes(allocator, cwd) catch return;
     if (children.len == 0) return;
 
-    try stderr.writeAll("\nsubfolders configured with sigillo:\n");
+    try stderr.writeAll("\nsubfolders configured with rx:\n");
     for (children) |child| {
         try stderr.print("  ." ++ std.fs.path.sep_str ++ "{s}", .{child.relative_path});
         if (child.entry.project_name) |name| {
@@ -107,7 +107,7 @@ fn printChildScopes(
         }
         try stderr.writeAll("\n");
     }
-    try stderr.writeAll("\nrun sigillo from one of these directories instead, or run:\n  sigillo setup\n");
+    try stderr.writeAll("\nrun rx from one of these directories instead, or run:\n  rx setup\n");
 }
 
 fn printAvailableProjects(
@@ -216,12 +216,12 @@ fn exitEnvNotFound(
     std.process.exit(1);
 }
 
-const Login = zeke.cmd("login", "Authenticate to Sigillo with device flow")
+const Login = zeke.cmd("login", "Authenticate to rx with device flow")
     .option("--scope [scope]", "Scope for saved auth (default: /)")
-    .example("sigillo login")
-    .example("SIGILLO_TOKEN=sig_xxx sigillo login --scope /")
-    .example("sigillo login --token sig_xxx --scope /")
-    .example("sigillo login --api-url https://sigillo.dev --scope /Users/me/project");
+    .example("rx login")
+    .example("RX_TOKEN=sig_xxx rx login --scope /")
+    .example("rx login --token sig_xxx --scope /")
+    .example("rx login --api-url https://env.shotpix.app --scope /Users/me/project");
 
 const Logout = zeke.cmd("logout", "Remove saved auth for a scope")
     .option("--scope [scope]", "Directory scope to clear (default: /)");
@@ -229,11 +229,11 @@ const Logout = zeke.cmd("logout", "Remove saved auth for a scope")
 const Me = zeke.cmd("me", "Show current user info")
     .option("--json", "Print raw JSON");
 
-const Setup = zeke.cmd("setup", "Save default project and env for the current directory (stored in ~/.sigillo, not in the repo)")
+const Setup = zeke.cmd("setup", "Save default project and env for the current directory (stored in ~/.rx, not in the repo)")
     .option("-p, --project [id]", "Project ID")
     .option("--env [slug]", "Env slug, usually dev since you run locally with the development environment")
     .option("-c, --config [slug]", "Env slug alias")
-    .example("sigillo setup --project website --env dev");
+    .example("rx setup --project website --env dev");
 
 const Run = zeke.cmd("run <...cmd>", "Run a command with secrets injected")
     .option("--command [cmd]", "Run a shell command string")
@@ -243,10 +243,10 @@ const Run = zeke.cmd("run <...cmd>", "Run a command with secrets injected")
     .option("-p, --project [id]", "Project ID override")
     .option("--env [slug]", "Env slug override (e.g. dev, prod)")
     .option("-c, --config [slug]", "Env slug override")
-    .example("sigillo run -- env")
-    .example("sigillo run --mount .env -- npm start")
-    .example("sigillo run --mount config.json --mount-format json -- next dev")
-    .example("sigillo run --command 'echo $MY_SECRET'");
+    .example("rx run -- env")
+    .example("rx run --mount .env -- npm start")
+    .example("rx run --mount config.json --mount-format json -- next dev")
+    .example("rx run --command 'echo $MY_SECRET'");
 
 const Secrets = zeke.cmd("secrets", "List secrets for the configured env")
     .option("-p, --project [id]", "Project ID override")
@@ -264,14 +264,14 @@ const SecretsSet = zeke.cmd("secrets set <name> [value]", "Set a secret value (o
     .option("-p, --project [id]", "Project ID override")
     .optionMany("--env <slug>", "Env slug override, repeatable (e.g. dev, prod)")
     .optionMany("-c, --config <slug>", "Env slug override, repeatable")
-    .example("sigillo secrets set STRIPE_SECRET_KEY -c prod")
-    .example("sigillo secrets set DATABASE_URL postgres://... -c dev -c prod");
+    .example("rx secrets set STRIPE_SECRET_KEY -c prod")
+    .example("rx secrets set DATABASE_URL postgres://... -c dev -c prod");
 
 const SecretsDelete = zeke.cmd("secrets delete <name>", "Delete a secret")
     .option("-p, --project [id]", "Project ID override")
     .optionMany("--env <slug>", "Env slug override, repeatable (e.g. dev, prod)")
     .optionMany("-c, --config <slug>", "Env slug override, repeatable")
-    .example("sigillo secrets delete OLD_KEY -c dev -c prod");
+    .example("rx secrets delete OLD_KEY -c dev -c prod");
 
 const SecretsDownload = zeke.cmd("secrets download", "Download all secrets in a chosen format")
     .option("--format [fmt]", "Output format: json, env, env-no-quotes, xargs, yaml, docker, dotnet-json (default: yaml)")
@@ -279,9 +279,9 @@ const SecretsDownload = zeke.cmd("secrets download", "Download all secrets in a 
     .option("--env [slug]", "Env slug override (e.g. dev, prod)")
     .option("-c, --config [slug]", "Env slug override")
     .option("--force", "Allow printing secret values in agent shells")
-    .example("sigillo secrets download")
-    .example("sigillo secrets download --format json")
-    .example("sigillo secrets download --format xargs | xargs -0 -n2 sh -c 'printf %s \"$2\" | vercel env add \"$1\" production --force' sh");
+    .example("rx secrets download")
+    .example("rx secrets download --format json")
+    .example("rx secrets download --format xargs | xargs -0 -n2 sh -c 'printf %s \"$2\" | vercel env add \"$1\" production --force' sh");
 
 const Orgs = zeke.cmd("orgs", "List organizations");
 
@@ -335,7 +335,7 @@ fn loginAction(_: Login.Args, opts: Login.Options, global: Global.Options) !void
         .api_url = global.api_url,
     });
 
-    const api_url = resolved.api_url.?; // always set — defaults to https://sigillo.dev
+    const api_url = resolved.api_url.?; // always set — defaults to https://env.shotpix.app
 
     if (resolved.token) |token| {
         try config.setScope(allocator, scope, .{
@@ -355,7 +355,7 @@ fn loginAction(_: Login.Args, opts: Login.Options, global: Global.Options) !void
         .base_url = api_url,
         .path = "/api/auth/device/code",
         .token = null,
-        .json_body = "{\"client_id\":\"sigillo-cli\"}",
+        .json_body = "{\"client_id\":\"rx-cli\"}",
     }) catch |err| {
         try color.err(stderr, "error");
         try stderr.print(": failed to request device code: {s}\n", .{@errorName(err)});
@@ -402,7 +402,7 @@ fn loginAction(_: Login.Args, opts: Login.Options, global: Global.Options) !void
 
     const poll_body = try std.fmt.allocPrint(
         allocator,
-        "{{\"grant_type\":\"urn:ietf:params:oauth:grant-type:device_code\",\"device_code\":\"{s}\",\"client_id\":\"sigillo-cli\"}}",
+        "{{\"grant_type\":\"urn:ietf:params:oauth:grant-type:device_code\",\"device_code\":\"{s}\",\"client_id\":\"rx-cli\"}}",
         .{device_code},
     );
     var sleep_seconds: u64 = @intCast(interval_seconds);
@@ -500,10 +500,10 @@ fn meAction(_: Me.Args, opts: Me.Options, global: Global.Options) !void {
     const token = resolved.token orelse {
         try color.err(stderr, "error");
         try stderr.print(": not logged in\n", .{});
-        try stderr.writeAll("  sigillo login\n");
+        try stderr.writeAll("  rx login\n");
         std.process.exit(1);
     };
-    const api_url = resolved.api_url.?; // always set — defaults to https://sigillo.dev
+    const api_url = resolved.api_url.?; // always set — defaults to https://env.shotpix.app
 
     const res = client.getMe(.{
         .allocator = allocator,
@@ -609,10 +609,10 @@ fn setupAction(_: Setup.Args, opts: Setup.Options, global: Global.Options) !void
     const token = resolved.token orelse {
         try color.err(stderr, "error");
         try stderr.print(": not logged in\n", .{});
-        try stderr.writeAll("  sigillo login\n");
+        try stderr.writeAll("  rx login\n");
         std.process.exit(1);
     };
-    const api_url = resolved.api_url.?; // always set — defaults to https://sigillo.dev
+    const api_url = resolved.api_url.?; // always set — defaults to https://env.shotpix.app
 
     const is_tty = std.posix.isatty(File.stdin().handle) and
         std.posix.isatty(File.stdout().handle);
@@ -675,7 +675,7 @@ fn setupAction(_: Setup.Args, opts: Setup.Options, global: Global.Options) !void
     } else {
         try color.err(stderr, "error");
         try stderr.print(": --project is required\n", .{});
-        try stderr.writeAll("  sigillo setup --project <PROJECT_ID> --env <SLUG>\n");
+        try stderr.writeAll("  rx setup --project <PROJECT_ID> --env <SLUG>\n");
         std.process.exit(1);
     };
     const project = selected_project.id;
@@ -746,7 +746,7 @@ fn setupAction(_: Setup.Args, opts: Setup.Options, global: Global.Options) !void
     } else {
         try color.err(stderr, "error");
         try stderr.print(": --env/--config is required\n", .{});
-        try stderr.print("  sigillo setup --project {s} --env <SLUG>\n", .{project});
+        try stderr.print("  rx setup --project {s} --env <SLUG>\n", .{project});
         std.process.exit(1);
     };
 
@@ -787,8 +787,8 @@ fn runAction(args: Run.Args, opts: Run.Options, global: Global.Options) !void {
     if (!use_shell and args.cmd.len == 0) {
         try color.err(stderr, "error");
         try stderr.print(": command is required\n", .{});
-        try stderr.writeAll("  sigillo run -- env\n");
-        try stderr.writeAll("  sigillo run --command 'echo $MY_SECRET'\n");
+        try stderr.writeAll("  rx run -- env\n");
+        try stderr.writeAll("  rx run --command 'echo $MY_SECRET'\n");
         std.process.exit(1);
     }
 
@@ -804,21 +804,21 @@ fn runAction(args: Run.Args, opts: Run.Options, global: Global.Options) !void {
     const token = resolved.token orelse {
         try color.err(stderr, "error");
         try stderr.print(": not logged in\n", .{});
-        try stderr.writeAll("  sigillo login\n");
+        try stderr.writeAll("  rx login\n");
         std.process.exit(1);
     };
-    const api_url = resolved.api_url.?; // always set — defaults to https://sigillo.dev
+    const api_url = resolved.api_url.?; // always set — defaults to https://env.shotpix.app
     const project = resolved.project orelse {
         try color.err(stderr, "error");
         try stderr.print(": project not configured for {s}\n", .{cwd});
-        try stderr.writeAll("  sigillo setup --project <PROJECT_ID> --env <SLUG>\n");
+        try stderr.writeAll("  rx setup --project <PROJECT_ID> --env <SLUG>\n");
         try printChildScopes(allocator, stderr, cwd);
         std.process.exit(1);
     };
     const environment = resolved.environment orelse {
         try color.err(stderr, "error");
         try stderr.print(": env not configured for {s}\n", .{cwd});
-        try stderr.writeAll("  sigillo setup\n");
+        try stderr.writeAll("  rx setup\n");
         try printChildScopes(allocator, stderr, cwd);
         std.process.exit(1);
     };
@@ -860,9 +860,9 @@ fn runAction(args: Run.Args, opts: Run.Options, global: Global.Options) !void {
     defer env_map.deinit();
     try mergeSecretsIntoEnvMap(&env_map, secrets);
 
-    // Marker so child processes can detect they're running inside sigillo.
+    // Marker so child processes can detect they're running inside rx.
     // Tools like tuistory use this to skip their own session management.
-    try env_map.put("SIGILLO", "1");
+    try env_map.put("RX", "1");
 
     // ── Mount: write secrets to a file ────────────────────────────
     const exit_code: u8 = if (opts.mount) |mount_path| mount_block: {
@@ -1383,7 +1383,7 @@ const EnvironmentContext = struct {
 fn resolveApiContext(allocator: std.mem.Allocator, cwd: []const u8, flags: config.ResolvedConfig) !ApiContext {
     const resolved = try config.resolve(allocator, cwd, flags);
     return .{
-        .api_url = resolved.api_url orelse "https://sigillo.dev",
+        .api_url = resolved.api_url orelse "https://env.shotpix.app",
         .token = resolved.token orelse return error.NotLoggedIn,
     };
 }
@@ -1392,7 +1392,7 @@ fn resolveProjectContext(allocator: std.mem.Allocator, cwd: []const u8, flags: c
     const resolved = try config.resolve(allocator, cwd, flags);
     return .{
         .api = .{
-            .api_url = resolved.api_url orelse "https://sigillo.dev",
+            .api_url = resolved.api_url orelse "https://env.shotpix.app",
             .token = resolved.token orelse return error.NotLoggedIn,
         },
         .project_id = resolved.project orelse return error.ProjectNotConfigured,
@@ -1405,7 +1405,7 @@ fn resolveEnvironmentContext(allocator: std.mem.Allocator, cwd: []const u8, flag
     const resolved = try config.resolve(allocator, cwd, flags);
     return .{
         .api = .{
-            .api_url = resolved.api_url orelse "https://sigillo.dev",
+            .api_url = resolved.api_url orelse "https://env.shotpix.app",
             .token = resolved.token orelse return error.NotLoggedIn,
         },
         .project_id = resolved.project orelse return error.ProjectNotConfigured,
@@ -1422,7 +1422,7 @@ fn requireApiContext(allocator: std.mem.Allocator, stderr: Writer, cwd: []const 
         error.NotLoggedIn => {
             try color.err(stderr, "error");
             try stderr.print(": not logged in\n", .{});
-            try stderr.writeAll("  sigillo login\n");
+            try stderr.writeAll("  rx login\n");
             std.process.exit(1);
         },
         else => return err,
@@ -1434,13 +1434,13 @@ fn requireProjectContext(allocator: std.mem.Allocator, stderr: Writer, cwd: []co
         error.NotLoggedIn => {
             try color.err(stderr, "error");
             try stderr.print(": not logged in\n", .{});
-            try stderr.writeAll("  sigillo login\n");
+            try stderr.writeAll("  rx login\n");
             std.process.exit(1);
         },
         error.ProjectNotConfigured => {
             try color.err(stderr, "error");
             try stderr.print(": project not configured for {s}\n", .{cwd});
-            try stderr.writeAll("  sigillo setup --project <PROJECT_ID> --env <SLUG>\n");
+            try stderr.writeAll("  rx setup --project <PROJECT_ID> --env <SLUG>\n");
             try printChildScopes(allocator, stderr, cwd);
             std.process.exit(1);
         },
@@ -1453,20 +1453,20 @@ fn requireEnvironmentContext(allocator: std.mem.Allocator, stderr: Writer, cwd: 
         error.NotLoggedIn => {
             try color.err(stderr, "error");
             try stderr.print(": not logged in\n", .{});
-            try stderr.writeAll("  sigillo login\n");
+            try stderr.writeAll("  rx login\n");
             std.process.exit(1);
         },
         error.EnvironmentNotConfigured => {
             try color.err(stderr, "error");
             try stderr.print(": env not configured for {s}\n", .{cwd});
-            try stderr.writeAll("  sigillo setup\n");
+            try stderr.writeAll("  rx setup\n");
             try printChildScopes(allocator, stderr, cwd);
             std.process.exit(1);
         },
         error.ProjectNotConfigured => {
             try color.err(stderr, "error");
             try stderr.print(": project not configured for {s}\n", .{cwd});
-            try stderr.writeAll("  sigillo setup --project <PROJECT_ID> --env <SLUG>\n");
+            try stderr.writeAll("  rx setup --project <PROJECT_ID> --env <SLUG>\n");
             try printChildScopes(allocator, stderr, cwd);
             std.process.exit(1);
         },
@@ -1476,7 +1476,7 @@ fn requireEnvironmentContext(allocator: std.mem.Allocator, stderr: Writer, cwd: 
 
 /// Resolve the list of environments a mutating command (set/delete) should
 /// target. When `env_slugs` is empty it falls back to the single configured
-/// env (`sigillo setup`). When one or more `-c/--env` slugs are given, each
+/// env (`rx setup`). When one or more `-c/--env` slugs are given, each
 /// becomes its own context sharing the resolved project + api context.
 fn resolveTargetEnvironments(
     allocator: std.mem.Allocator,
@@ -1526,11 +1526,11 @@ fn requirePlainSecretForceInAgent(allocator: std.mem.Allocator, stderr: Writer, 
         try stderr.writeAll(": printing secret values into an agent context is discouraged\n");
         try stderr.print("  detected agent shell: {s}\n", .{agent_name.?});
         try stderr.writeAll("\n");
-        try stderr.writeAll("  Prefer chaining the command that needs secrets through Sigillo, so values never enter chat context:\n");
-        try stderr.writeAll("    sigillo run --command 'your-command \"$DATABASE_URL\"'\n");
+        try stderr.writeAll("  Prefer chaining the command that needs secrets through rx, so values never enter chat context:\n");
+        try stderr.writeAll("    rx run --command 'your-command \"$DATABASE_URL\"'\n");
         try stderr.writeAll("\n");
         try stderr.writeAll("  Piped stdout is allowed because values go directly to the next process:\n");
-        try stderr.writeAll("    sigillo secrets download --format env | fly secrets import --app my-app\n");
+        try stderr.writeAll("    rx secrets download --format env | fly secrets import --app my-app\n");
         try stderr.writeAll("\n");
         try stderr.writeAll("  If you really need to inspect secrets as a last resort, rerun with --force.\n");
         std.process.exit(1);
@@ -1544,7 +1544,7 @@ fn shouldBlockPlainSecretOutput(force: bool, stdout_is_tty: bool, agent_name: ?[
 fn detectAgentNameFromEnvMap(env_map: *const std.process.EnvMap) ?[]const u8 {
     if (presentEnv(env_map, "AI_AGENT")) |value| return value;
 
-    // Mirrors std-env's src/agents.ts markers so Sigillo blocks raw secret
+    // Mirrors std-env's src/agents.ts markers so rx blocks raw secret
     // output in the same shells agents already identify for themselves.
     const agents = [_]struct { name: []const u8, keys: []const []const u8 }{
         .{ .name = "claude", .keys = &.{ "CLAUDECODE", "CLAUDE_CODE" } },
@@ -1701,7 +1701,7 @@ fn secretsGetAction(args: SecretsGet.Args, opts: SecretsGet.Options, global: Glo
 
     const secret = res.value.?;
     // When stdout is piped (not a TTY) or --raw is passed, output just the raw
-    // value so `sigillo secrets get X | sigillo secrets set Y` works correctly.
+    // value so `rx secrets get X | rx secrets set Y` works correctly.
     const stdout_is_tty = std.posix.isatty(File.stdout().handle);
     if (opts.raw or !stdout_is_tty) {
         try stdout.writeAll(secret.value);
@@ -1794,7 +1794,7 @@ fn secretsSetAction(args: SecretsSet.Args, opts: SecretsSet.Options, global: Glo
 
         const secret = res.value.?;
         // When stdout is piped, output just the secret ID per env so callers
-        // can capture it: ID=$(sigillo secrets set X Y)
+        // can capture it: ID=$(rx secrets set X Y)
         const stdout_is_tty = std.posix.isatty(File.stdout().handle);
         if (!stdout_is_tty) {
             try stdout.print("{s}\n", .{secret.id});
@@ -3069,7 +3069,7 @@ test "run command keeps argv after double dash as positional command" {
 
     const TestRun = Run.bindWith(Global, State.action);
 
-    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "run", "--", "next", "dev" });
 
     try std.testing.expectEqual(@as(usize, 2), State.captured_cmd.len);
@@ -3094,7 +3094,7 @@ test "run command still parses flags before double dash" {
 
     const TestRun = Run.bindWith(Global, State.action);
 
-    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "run", "--disable-redaction", "--", "next", "dev" });
 
     try std.testing.expectEqual(@as(usize, 2), State.captured_cmd.len);
@@ -3120,7 +3120,7 @@ test "run command parses --mount and --mount-format" {
 
     const TestRun = Run.bindWith(Global, State.action);
 
-    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "run", "--mount", ".env", "--", "npm", "start" });
 
     try std.testing.expectEqualStrings(".env", State.mount.?);
@@ -3143,7 +3143,7 @@ test "run command parses --mount with explicit --mount-format" {
 
     const TestRun = Run.bindWith(Global, State.action);
 
-    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "run", "--mount", "config.json", "--mount-format", "json", "--", "next", "dev" });
 
     try std.testing.expectEqualStrings("config.json", State.mount.?);
@@ -3163,7 +3163,7 @@ test "run command leaves mount unset when flag is omitted" {
 
     const TestRun = Run.bindWith(Global, State.action);
 
-    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "run", "--", "env" });
 
     try std.testing.expect(State.mount == null);
@@ -3196,7 +3196,7 @@ test "secrets download parses explicit format" {
     };
 
     const TestSecretsDownload = SecretsDownload.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecretsDownload}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecretsDownload}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "download", "--format", "xargs" });
 
     try std.testing.expectEqualStrings("xargs", State.format.?);
@@ -3212,7 +3212,7 @@ test "secrets download parses force option" {
     };
 
     const TestSecretsDownload = SecretsDownload.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecretsDownload}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecretsDownload}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "download", "--force" });
 
     try std.testing.expect(State.force);
@@ -3228,7 +3228,7 @@ test "secrets get parses force option" {
     };
 
     const TestSecretsGet = SecretsGet.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecretsGet}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecretsGet}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "get", "DATABASE_URL", "--force" });
 
     try std.testing.expect(State.force);
@@ -3244,7 +3244,7 @@ test "secrets download leaves format unset when omitted" {
     };
 
     const TestSecretsDownload = SecretsDownload.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecretsDownload}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecretsDownload}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "download" });
 
     try std.testing.expect(State.format == null);
@@ -3260,7 +3260,7 @@ test "secrets command parses env override" {
     };
 
     const TestSecrets = Secrets.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecrets}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecrets}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "--env", "env_123" });
 
     try std.testing.expectEqualStrings("env_123", State.environment.?);
@@ -3276,7 +3276,7 @@ test "secrets command parses config alias" {
     };
 
     const TestSecrets = Secrets.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecrets}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecrets}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "--config", "env_123" });
 
     try std.testing.expectEqualStrings("env_123", State.environment.?);
@@ -3292,7 +3292,7 @@ test "run command parses short config alias" {
     };
 
     const TestRun = Run.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "run", "-c", "env_123", "--", "next", "dev" });
 
     try std.testing.expectEqualStrings("env_123", State.environment.?);
@@ -3308,7 +3308,7 @@ test "run command parses short project alias" {
     };
 
     const TestRun = Run.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestRun}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "run", "-p", "proj_123", "--", "next", "dev" });
 
     try std.testing.expectEqualStrings("proj_123", State.project.?);
@@ -3324,7 +3324,7 @@ test "secrets set parses short project alias" {
     };
 
     const TestSecretsSet = SecretsSet.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "set", "DATABASE_URL", "postgres://example", "-p", "proj_123", "-c", "dev" });
 
     try std.testing.expectEqualStrings("proj_123", State.project.?);
@@ -3342,7 +3342,7 @@ test "secrets set collects repeated config values" {
     };
 
     const TestSecretsSet = SecretsSet.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "set", "K", "v", "-c", "dev", "-c", "prod" });
 }
 
@@ -3358,7 +3358,7 @@ test "secrets set merges env and config lists in order" {
     };
 
     const TestSecretsSet = SecretsSet.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "set", "K", "v", "--env", "dev", "-c", "prod" });
 }
 
@@ -3371,7 +3371,7 @@ test "secrets set leaves env list empty when omitted" {
     };
 
     const TestSecretsSet = SecretsSet.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "set", "K", "v" });
 }
 
@@ -3385,7 +3385,7 @@ test "secrets delete collects repeated config values" {
     };
 
     const TestSecretsDelete = SecretsDelete.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecretsDelete}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecretsDelete}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "delete", "OLD_KEY", "-c", "dev", "-c", "prod" });
 }
 
@@ -3433,7 +3433,7 @@ test "secrets set with interleaved env and config flags keeps env-first order" {
     };
 
     const TestSecretsSet = SecretsSet.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestSecretsSet}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "secrets", "set", "K", "v", "-c", "dev", "--env", "prod" });
 }
 
@@ -3447,7 +3447,7 @@ test "orgs create parses required options" {
     };
 
     const TestOrgsCreate = OrgsCreate.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestOrgsCreate}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestOrgsCreate}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "orgs", "create", "--name", "holocron" });
 
     try std.testing.expectEqualStrings("holocron", State.name.?);
@@ -3465,7 +3465,7 @@ test "projects create parses required options" {
     };
 
     const TestProjectsCreate = ProjectsCreate.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestProjectsCreate}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestProjectsCreate}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "projects", "create", "--org", "org_123", "--name", "backend" });
 
     try std.testing.expectEqualStrings("org_123", State.org.?);
@@ -3486,7 +3486,7 @@ test "environments rename parses optional name and slug" {
     };
 
     const TestEnvironmentsRename = EnvironmentsRename.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestEnvironmentsRename}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestEnvironmentsRename}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "environments", "rename", "env_123", "--name", "prod", "--slug", "production" });
 
     try std.testing.expectEqualStrings("env_123", State.id.?);
@@ -3506,7 +3506,7 @@ test "login parses token option" {
     };
 
     const TestLogin = Login.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestLogin}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestLogin}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "login", "--token", "sig_test_123", "--scope", "/" });
 
     try std.testing.expectEqualStrings("sig_test_123", State.token.?);
@@ -3525,7 +3525,7 @@ test "login leaves scope unset when flag is omitted" {
     };
 
     const TestLogin = Login.bindWith(Global, State.action);
-    var app = zeke.AppWith(.{TestLogin}, Global).init(std.testing.allocator, "sigillo");
+    var app = zeke.AppWith(.{TestLogin}, Global).init(std.testing.allocator, "rx");
     try app.dispatch(&.{ "login", "--token", "sig_test_123" });
 
     try std.testing.expectEqualStrings("sig_test_123", State.token.?);
@@ -3586,7 +3586,7 @@ pub fn main() !void {
         EnvironmentsGet.bindWith(Global, environmentsGetAction),
         EnvironmentsRename.bindWith(Global, environmentsRenameAction),
         EnvironmentsDelete.bindWith(Global, environmentsDeleteAction),
-    }, Global).init(allocator, "sigillo");
+    }, Global).init(allocator, "rx");
 
     const build_options = @import("build_options");
     app.setVersion(build_options.version);

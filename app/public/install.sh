@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP="sigillo"
+APP="rx"
 REPO="ed-thuando/roosterx-sigillo"
 
 MUTED='\033[0;2m'
@@ -60,7 +60,7 @@ else
   fi
 fi
 
-INSTALL_DIR=$HOME/.sigillo/bin
+INSTALL_DIR=$HOME/.rx/bin
 mkdir -p "$INSTALL_DIR"
 
 release_api_url="https://api.github.com/repos/$REPO/releases/latest"
@@ -72,7 +72,7 @@ if [ -z "$tag_name" ]; then
   exit 1
 fi
 
-filename="sigillo-$tag_name-$combo$archive_ext"
+filename="$APP-$tag_name-$combo$archive_ext"
 url="https://github.com/$REPO/releases/download/$tag_name/$filename"
 
 print_message() {
@@ -290,11 +290,11 @@ if [ -n "${GITHUB_ACTIONS-}" ] && [ "${GITHUB_ACTIONS}" == "true" ]; then
 fi
 
 echo -e ""
-echo -e "     w      w 8 8       "
-echo -e "d88b w .d88 w 8 8 .d8b. "
-echo -e "\`Yb. 8 8  8 8 8 8 8' .8 "
-echo -e "Y88P 8 \`Y88 8 8 8 \`Y8P' "
-echo -e "       wwdP             "
+echo -e "           "
+echo -e "8d8b Yb dP "
+echo -e "8P    \`8.  "
+echo -e "8    dP Yb "
+echo -e "           "
 echo -e ""
 echo -e "cd <project>  ${MUTED}# Open directory${NC}"
 echo -e "sigillo      ${MUTED}# Run command${NC}"

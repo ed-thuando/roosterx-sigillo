@@ -1,5 +1,5 @@
-// Cross-target builder for sigillo CLI Zig binary.
-// Builds standalone executables into dist/<platform>/sigillo and refreshes the local wrapper.
+// Cross-target builder for rx CLI Zig binary.
+// Builds standalone executables into dist/<platform>/rx and refreshes the local wrapper.
 
 import childProcess from 'node:child_process'
 import fs from 'node:fs'
@@ -32,7 +32,7 @@ const targets: Target[] = [
 ]
 
 function getHostBinaryPath(): string {
-  const binaryName = process.platform === 'win32' ? 'sigillo.exe' : 'sigillo'
+  const binaryName = process.platform === 'win32' ? 'rx.exe' : 'rx'
   return path.join(distDirectory, hostTarget, binaryName)
 }
 
@@ -67,18 +67,18 @@ function installLocalWrapper(): void {
     fs.mkdirSync(directory, { recursive: true })
 
     if (process.platform === 'win32') {
-      const wrapperPath = path.join(directory, 'sigillo.cmd')
+      const wrapperPath = path.join(directory, 'rx.cmd')
       const wrapper = `@echo off\r\n"${binaryPath}" %*\r\n`
       fs.writeFileSync(wrapperPath, wrapper)
-      process.stdout.write(`Installed local sigillo wrapper at ${wrapperPath}\n`)
+      process.stdout.write(`Installed local rx wrapper at ${wrapperPath}\n`)
       continue
     }
 
-    const wrapperPath = path.join(directory, 'sigillo')
+    const wrapperPath = path.join(directory, 'rx')
     const wrapper = `#!/usr/bin/env bash\nexec ${shellQuote(binaryPath)} "$@"\n`
     fs.writeFileSync(wrapperPath, wrapper)
     fs.chmodSync(wrapperPath, 0o755)
-    process.stdout.write(`Installed local sigillo wrapper at ${wrapperPath}\n`)
+    process.stdout.write(`Installed local rx wrapper at ${wrapperPath}\n`)
   }
 }
 
@@ -102,7 +102,7 @@ function runCommand({ command, args, cwd }: { command: string; args: string[]; c
 }
 
 function resolveExePath(): string | undefined {
-  const candidates = ['sigillo', 'sigillo.exe'].map((fileName) => {
+  const candidates = ['rx', 'rx.exe'].map((fileName) => {
     return path.join(zigBinDirectory, fileName)
   })
   return candidates.find((candidate) => {
@@ -134,7 +134,7 @@ async function buildTarget({ target }: { target: Target }): Promise<void> {
   const targetDirectory = path.join(distDirectory, target.name)
   fs.mkdirSync(targetDirectory, { recursive: true })
 
-  const exeFileName = target.name.startsWith('win32') ? 'sigillo.exe' : 'sigillo'
+  const exeFileName = target.name.startsWith('win32') ? 'rx.exe' : 'rx'
   const destExePath = path.join(targetDirectory, exeFileName)
   fs.copyFileSync(exePath, destExePath)
 

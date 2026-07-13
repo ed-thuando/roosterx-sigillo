@@ -1,4 +1,4 @@
-// Build script for the sigillo CLI — standalone executable.
+// Build script for the rx CLI — standalone executable.
 // No native platform deps needed, just Zig stdlib HTTP + filesystem.
 
 const std = @import("std");
@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) void {
     }).module("zeke"));
 
     const exe = b.addExecutable(.{
-        .name = "sigillo",
+        .name = "rx",
         .root_module = exe_mod,
     });
     b.installArtifact(exe);

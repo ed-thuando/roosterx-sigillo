@@ -1,5 +1,5 @@
 // Scoped JSON config system for the sigillo CLI.
-// Stores everything in ~/.sigillo/config.json on Unix and %APPDATA%\sigillo\config.json
+// Stores everything in ~/.rx/config.json on Unix and %APPDATA%\rx\config.json
 // on Windows, with Doppler-style directory scopes.
 
 const std = @import("std");
@@ -24,7 +24,7 @@ pub const ConfigFile = struct {
     scopes: std.ArrayListUnmanaged(ScopeRecord) = .empty,
 };
 
-const config_dir_name = if (builtin.os.tag == .windows) "sigillo" else ".sigillo";
+const config_dir_name = if (builtin.os.tag == .windows) "rx" else ".rx";
 const config_file_name = "config.json";
 
 pub fn configFilePath(allocator: std.mem.Allocator) ![]const u8 {
@@ -259,13 +259,13 @@ pub fn resolve(allocator: std.mem.Allocator, cwd_input: []const u8, flags: Resol
         }
     }
 
-    if (try getEnvVarOptional(allocator, "SIGILLO_TOKEN")) |value| result.token = value;
-    if (try getEnvVarOptional(allocator, "SIGILLO_API_URL")) |value| result.api_url = value;
-    if (try getEnvVarOptional(allocator, "SIGILLO_PROJECT")) |value| {
+    if (try getEnvVarOptional(allocator, "RX_TOKEN")) |value| result.token = value;
+    if (try getEnvVarOptional(allocator, "RX_API_URL")) |value| result.api_url = value;
+    if (try getEnvVarOptional(allocator, "RX_PROJECT")) |value| {
         result.project = value;
         result.project_name = null;
     }
-    if (try getEnvVarOptional(allocator, "SIGILLO_ENVIRONMENT")) |value| result.environment = value;
+    if (try getEnvVarOptional(allocator, "RX_ENVIRONMENT")) |value| result.environment = value;
 
     if (flags.token) |value| result.token = value;
     if (flags.api_url) |value| result.api_url = value;
@@ -277,7 +277,7 @@ pub fn resolve(allocator: std.mem.Allocator, cwd_input: []const u8, flags: Resol
 
     // Default api_url to sigillo.dev when not configured anywhere
     if (result.api_url == null) {
-        result.api_url = "https://sigillo.dev";
+        result.api_url = "https://env.shotpix.app";
     }
 
     return result;

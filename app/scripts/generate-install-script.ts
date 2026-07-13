@@ -6,13 +6,13 @@ import { Font } from '@ascii-kit/font'
 
 const outputPath = path.join(import.meta.dirname, '..', 'public', 'install.sh')
 const docsUrl = 'https://github.com/ed-thuando/roosterx-sigillo'
-const installDirName = '.sigillo'
+const installDirName = '.rx'
 
 async function getLogoLines(): Promise<string[]> {
   const fontFileUrl = await import.meta.resolve('@ascii-kit/fonts-flf/dist/thick.flf')
   const fontData = await fs.readFile(new URL(fontFileUrl), 'utf8')
   const font = new Font(fontData)
-  const logo = await font.text('sigillo')
+  const logo = await font.text('rx')
   return logo.split('\n')
 }
 
@@ -34,7 +34,7 @@ async function createInstallScript(): Promise<string> {
   return String.raw`#!/usr/bin/env bash
 set -euo pipefail
 
-APP="sigillo"
+APP="rx"
 REPO="ed-thuando/roosterx-sigillo"
 
 MUTED='\033[0;2m'
@@ -105,7 +105,7 @@ if [ -z "$tag_name" ]; then
   exit 1
 fi
 
-filename="sigillo-$tag_name-$combo$archive_ext"
+filename="$APP-$tag_name-$combo$archive_ext"
 url="https://github.com/$REPO/releases/download/$tag_name/$filename"
 
 print_message() {
