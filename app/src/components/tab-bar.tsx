@@ -15,10 +15,12 @@ export function TabBar({
   projectId,
   pathname,
   firstEnvSlug,
+  canReadTokens = false,
 }: {
   projectId: string;
   pathname: string;
   firstEnvSlug: string | null;
+  canReadTokens?: boolean;
 }) {
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [current, setCurrent] = useState(pathname);
@@ -39,12 +41,16 @@ export function TabBar({
     ? router.href("/dash/projects/:projectId/envs/:envSlug", { projectId, envSlug })
     : router.href("/dash/projects/:projectId", { projectId });
   const activePath = current ?? "";
+  // Tokens tab is admin-only; hide it for callers who can't read API tokens
+  // (its route just 403s for them) rather than showing a dead tab.
   const tabs = [
     { label: "Secrets", href: secretsHref, active: activePath === base || activePath.startsWith(`${base}/envs`) },
-    { label: "Tokens", href: router.href("/dash/projects/:projectId/tokens", { projectId }), active: activePath === `${base}/tokens` },
+    ...(canReadTokens
+      ? [{ label: "Tokens", href: router.href("/dash/projects/:projectId/tokens", { projectId }), active: activePath === `${base}/tokens` }]
+      : []),
     { label: "Access", href: router.href("/dash/projects/:projectId/access", { projectId }), active: activePath === `${base}/access` },
     { label: "Settings", href: router.href("/dash/projects/:projectId/settings", { projectId }), active: activePath === `${base}/settings` },
-  ] as const;
+  ];
 
   return (
     <div className="max-w-(--content-max-width) mx-auto w-full">

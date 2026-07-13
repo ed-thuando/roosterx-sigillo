@@ -169,11 +169,24 @@ export const app = new Spiceflow()
       createdAt: m.org!.createdAt!, updatedAt: m.org!.updatedAt!,
     }))
 
+    // Tokens tab is admin-only (its loader requires Read ApiToken); resolve the
+    // caller's ability for the current project so the tab bar can hide it
+    // instead of letting members click a tab that just 403s.
+    let canReadTokens = false
+    if (projectId) {
+      const orgId = await getOrgIdForProject(projectId)
+      if (orgId) {
+        const ability = await getUserAbility(session.userId, orgId)
+        canReadTokens = ability.can('Read', subject('ApiToken', { projectId }))
+      }
+    }
+
     return {
       orgs,
       projectId,
       pathname,
       currentProjectFirstEnvSlug: null,
+      canReadTokens,
       user: { name: session.user.name || 'User', email: session.user.email || '' },
     }
   })
@@ -264,6 +277,7 @@ export const app = new Spiceflow()
                   projectId={projectId}
                   pathname={loaderData.pathname}
                   firstEnvSlug={loaderData.currentProjectFirstEnvSlug}
+                  canReadTokens={loaderData.canReadTokens ?? false}
                 />
               </div>
             )}
@@ -613,6 +627,9 @@ export const app = new Spiceflow()
       orgId,
       orgName: orgRow?.name ?? 'Organization',
       isOrgAdmin,
+      // Deleting a project needs project-admin (or org-admin); hide the button
+      // for everyone else so they don't click a dead destructive action.
+      canDeleteProject: ability.can('Delete', subject('Project', { id: params.projectId })),
       projectId: params.projectId,
       projectName: projects.find((p) => p.id === params.projectId)?.name ?? 'Project',
       projectNames: projects.map((p) => p.name),
