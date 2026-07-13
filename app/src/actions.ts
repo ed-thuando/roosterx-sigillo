@@ -534,14 +534,33 @@ export async function syncMissingSecretsAction({
   return { count: toSync.length }
 }
 
-export async function createOrgAction({ name }: { name: string }) {
+export async function createOrgAction({ name, importFromOrgId }: { name: string; importFromOrgId?: string }) {
   if (!name) throw new Error('Name is required')
   const session = await requireSession()
   const db = getDb()
+
+  // Optional: copy the member list from an existing org (the caller must be an
+  // admin there) so a new org can reuse a team without re-inviting everyone.
+  // Roles are preserved; the creator is always admin and is skipped.
+  let importedMembers: { userId: string; role: 'admin' | 'member' }[] = []
+  if (importFromOrgId) {
+    await requireAdminRole(session.userId, importFromOrgId)
+    const sourceMembers = await db.query.orgMember.findMany({
+      where: { orgId: importFromOrgId },
+      columns: { userId: true, role: true },
+    })
+    importedMembers = sourceMembers.filter((member) => member.userId !== session.userId)
+  }
+
   const orgId = ulid()
   const [[org]] = await db.batch([
     db.insert(schema.org).values({ id: orgId, name }).returning({ id: schema.org.id, name: schema.org.name }),
     db.insert(schema.orgMember).values({ orgId, userId: session.userId, role: 'admin' }),
+    ...importedMembers.map((member) =>
+      db.insert(schema.orgMember)
+        .values({ orgId, userId: member.userId, role: member.role })
+        .onConflictDoNothing({ target: [schema.orgMember.orgId, schema.orgMember.userId] }),
+    ),
   ] as const)
   throw redirect(router.href('/dash/orgs/:orgId', { orgId: org!.id }))
 }

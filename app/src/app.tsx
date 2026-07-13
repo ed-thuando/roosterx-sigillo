@@ -375,7 +375,19 @@ export const app = new Spiceflow()
   })
 
   // ── New Organization page (standalone, no sidebar) ─────────────
-  .page('/dash/new-org', async () => {
+  .page('/dash/new-org', async ({ request }) => {
+    const session = await requirePageSession(request)
+    const db = getDb()
+    // Orgs the caller admins — offered as "import members from" sources so a
+    // new org can reuse an existing team without inviting everyone again.
+    const adminMemberships = await db.query.orgMember.findMany({
+      where: { userId: session.userId, role: 'admin' },
+      with: { org: { columns: { id: true, name: true } } },
+      orderBy: { createdAt: 'desc' },
+    })
+    const adminOrgs = adminMemberships
+      .filter((m) => m.org != null)
+      .map((m) => ({ id: m.org!.id, name: m.org!.name }))
     return (
       <div className="mx-auto w-full max-w-md py-12">
         <div className="space-y-6 rounded-3xl border border-border bg-card p-8 shadow-sm">
@@ -385,7 +397,7 @@ export const app = new Spiceflow()
               Organizations group your projects and team members.
             </p>
           </div>
-          <CreateOrgForm />
+          <CreateOrgForm adminOrgs={adminOrgs} />
         </div>
       </div>
     )
