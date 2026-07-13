@@ -93,7 +93,7 @@ function SidebarContent({
       <DropdownMenu>
         <DropdownMenuTrigger
           className={cn(
-            "flex h-12 w-full items-center gap-2 rounded-lg px-3 text-sm transition-colors hover:bg-default-soft data-[popup-open]:bg-default-soft",
+            "flex h-12 w-full items-center gap-2 rounded-lg px-3 text-sm transition-colors hover:bg-muted data-[popup-open]:bg-muted",
           )}
         >
           <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -157,8 +157,8 @@ function SidebarContent({
                 href={href}
                 onClick={onNavigate}
                 className={cn(
-                  "flex h-8 items-center gap-2 rounded-lg px-2 text-sm transition-colors hover:bg-default-soft",
-                  isActive && "bg-default-soft font-medium",
+                  "flex h-8 items-center gap-2 rounded-lg px-2 text-sm transition-colors hover:bg-muted",
+                  isActive && "bg-muted font-medium",
                 )}
               >
                 {isActive ? (
@@ -173,7 +173,7 @@ function SidebarContent({
           {currentOrgId && (
             <button
               onClick={() => setShowNewProject(true)}
-              className="flex h-8 items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-default-soft hover:text-foreground cursor-pointer"
+              className="flex h-8 items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground cursor-pointer"
             >
               <PlusIcon className="size-4 shrink-0 opacity-60" />
               New project
@@ -195,7 +195,7 @@ function SidebarContent({
         <DropdownMenu>
           <DropdownMenuTrigger
             className={cn(
-              "flex h-14 w-full items-center gap-2 rounded-lg px-3 text-sm transition-colors hover:bg-default-soft data-[popup-open]:bg-default-soft",
+              "flex h-14 w-full items-center gap-2 rounded-lg px-3 text-sm transition-colors hover:bg-muted data-[popup-open]:bg-muted",
             )}
           >
             <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground font-medium text-xs">
@@ -362,7 +362,7 @@ export function NewProjectDialog({
 export function MobileMenuButton() {
   return (
     <button
-      className="md:hidden flex items-center justify-center size-9 rounded-md hover:bg-default-soft transition-colors cursor-pointer"
+      className="md:hidden flex items-center justify-center size-9 rounded-md hover:bg-muted transition-colors cursor-pointer"
       onClick={() => window.dispatchEvent(new CustomEvent("sigillo:toggle-drawer"))}
       aria-label="Open menu"
     >

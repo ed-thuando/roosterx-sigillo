@@ -53,7 +53,7 @@ export function DropdownMenuPopup({
       >
         <MenuPrimitive.Popup
           className={cn(
-            "min-w-(--anchor-width) origin-(--transform-origin) rounded-2xl border border-border bg-overlay p-1 text-overlay-foreground shadow-overlay outline-none transition-[transform,scale,opacity] data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0",
+            "min-w-(--anchor-width) origin-(--transform-origin) rounded-2xl border border-border bg-popover p-1 text-popover-foreground shadow-lg outline-none transition-[transform,scale,opacity] data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0",
             className,
           )}
           data-slot="dropdown-menu-popup"
@@ -73,7 +73,7 @@ export function DropdownMenuItem({
   return (
     <MenuPrimitive.Item
       className={cn(
-        "flex min-h-8 w-full cursor-default items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-highlighted:bg-default-soft data-highlighted:text-default-soft-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "flex min-h-8 w-full cursor-default items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-highlighted:bg-muted data-highlighted:text-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       data-slot="dropdown-menu-item"
@@ -90,7 +90,7 @@ export function DropdownMenuLinkItem({
     <MenuPrimitive.LinkItem
       closeOnClick
       className={cn(
-        "flex min-h-8 w-full cursor-default items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-highlighted:bg-default-soft data-highlighted:text-default-soft-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "flex min-h-8 w-full cursor-default items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-highlighted:bg-muted data-highlighted:text-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       data-slot="dropdown-menu-link-item"

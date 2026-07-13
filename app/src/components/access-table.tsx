@@ -471,7 +471,7 @@ function EnvHeader({
       {canWriteEnv ? (
         <DropdownMenu>
           <DropdownMenuTrigger
-            className="flex size-7 items-center justify-center rounded-md hover:bg-default-soft"
+            className="flex size-7 items-center justify-center rounded-md hover:bg-muted"
             aria-label={`Manage ${env.name}`}
           >
             <MoreVerticalIcon className="size-4" />

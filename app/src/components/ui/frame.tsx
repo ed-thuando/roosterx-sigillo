@@ -8,7 +8,7 @@ export function Frame({
   return (
     <div
       className={cn(
-        "relative flex flex-col rounded-2xl bg-surface-secondary/72 p-1",
+        "relative flex flex-col rounded-2xl bg-muted p-1",
         "*:[[data-slot=frame-panel]+[data-slot=frame-panel]]:mt-1",
         className,
       )}
@@ -25,7 +25,7 @@ export function FramePanel({
   return (
     <div
       className={cn(
-        "relative rounded-xl border border-border bg-surface text-surface-foreground p-5 shadow-none",
+        "relative rounded-xl border border-border bg-card text-card-foreground p-5 shadow-none",
         className,
       )}
       data-slot="frame-panel"
