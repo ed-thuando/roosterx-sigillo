@@ -203,7 +203,11 @@ function AccessMatrix({
     setPending(`remove:${memberId}`)
     setError(null)
     try {
-      const grants = projectMembers.filter((g) => g.user?.id === memberId)
+      // memberId is the org-member row id; the grant rows key off the user id,
+      // so resolve it before filtering (comparing the two never matched, which
+      // is why the button silently did nothing).
+      const userId = members.find((m) => m.id === memberId)?.user?.id
+      const grants = userId ? projectMembers.filter((g) => g.user?.id === userId) : []
       for (const grant of grants) {
         await removeProjectMemberAction({ memberId: grant.id })
       }
