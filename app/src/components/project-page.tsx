@@ -44,14 +44,14 @@ function CliBanner() {
   if (!open) return null;
 
   return (
-    <FramePanel className="relative overflow-hidden border-border bg-muted p-4 sm:p-8">
+    <FramePanel className="relative overflow-hidden border-border bg-secondary p-4 sm:p-8">
       <button
         type="button"
         onClick={() => {
           document.cookie = `${cliBannerCookieName}=1; Path=/; Max-Age=31536000; SameSite=Lax`;
           setOpen(false);
         }}
-        className="absolute right-0.5 top-0.5 z-10 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="absolute right-0.5 top-0.5 z-10 rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
         aria-label="Dismiss CLI banner"
         title="Dismiss"
       >

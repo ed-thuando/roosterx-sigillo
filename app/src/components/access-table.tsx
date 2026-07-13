@@ -471,7 +471,7 @@ function EnvHeader({
       {canWriteEnv ? (
         <DropdownMenu>
           <DropdownMenuTrigger
-            className="flex size-7 items-center justify-center rounded-md hover:bg-muted"
+            className="flex size-7 items-center justify-center rounded-md hover:bg-secondary"
             aria-label={`Manage ${env.name}`}
           >
             <MoreVerticalIcon className="size-4" />
@@ -501,7 +501,7 @@ function MemberCell({ member, currentUserId }: { member: Member; currentUserId: 
       {u?.image ? (
         <img src={u.image} alt="" className="size-6 rounded-full object-cover" />
       ) : (
-        <span className="flex size-6 items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
+        <span className="flex size-6 items-center justify-center rounded-full bg-secondary text-xs font-medium text-muted-foreground">
           {initialsFor(u?.name ?? null, u?.email ?? null)}
         </span>
       )}

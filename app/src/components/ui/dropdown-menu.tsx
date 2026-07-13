@@ -73,7 +73,7 @@ export function DropdownMenuItem({
   return (
     <MenuPrimitive.Item
       className={cn(
-        "flex min-h-8 w-full cursor-default items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-highlighted:bg-muted data-highlighted:text-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "flex min-h-8 w-full cursor-default items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-highlighted:bg-secondary data-highlighted:text-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       data-slot="dropdown-menu-item"
@@ -90,7 +90,7 @@ export function DropdownMenuLinkItem({
     <MenuPrimitive.LinkItem
       closeOnClick
       className={cn(
-        "flex min-h-8 w-full cursor-default items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-highlighted:bg-muted data-highlighted:text-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "flex min-h-8 w-full cursor-default items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none data-highlighted:bg-secondary data-highlighted:text-foreground [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       data-slot="dropdown-menu-link-item"
