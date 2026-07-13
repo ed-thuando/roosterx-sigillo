@@ -10,6 +10,7 @@ import {
   updateOrgMemberRoleAction,
   addProjectMemberAction,
   removeProjectMemberAction,
+  removeOrgMemberAction,
   setEnvAccessAction,
   createEnvAction,
   renameEnvAction,
@@ -199,24 +200,9 @@ function AccessMatrix({
     }
   }
 
-  async function removeMember(memberId: string) {
-    setPending(`remove:${memberId}`)
-    setError(null)
-    try {
-      // memberId is the org-member row id; the grant rows key off the user id,
-      // so resolve it before filtering (comparing the two never matched, which
-      // is why the button silently did nothing).
-      const userId = members.find((m) => m.id === memberId)?.user?.id
-      const grants = userId ? projectMembers.filter((g) => g.user?.id === userId) : []
-      for (const grant of grants) {
-        await removeProjectMemberAction({ memberId: grant.id })
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to remove member")
-    } finally {
-      setPending(null)
-    }
-  }
+  // Trash button opens a dialog asking whether to remove the member from just
+  // this project (revoke grants) or from the whole organization.
+  const [removeTarget, setRemoveTarget] = useState<Member | null>(null)
 
   return (
     <Frame className="w-full overflow-x-auto">
@@ -266,10 +252,9 @@ function AccessMatrix({
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => removeMember(member.id)}
-                      disabled={pending === `remove:${member.id}`}
+                      onClick={() => setRemoveTarget(member)}
                       className="text-destructive hover:bg-destructive/10"
-                      title="Remove from project"
+                      title="Remove member"
                     >
                       <Trash2Icon className="size-4" />
                     </Button>
@@ -326,7 +311,102 @@ function AccessMatrix({
       {dialog?.type === "add" ? (
         <AddEnvDialog projectId={projectId} onClose={() => setDialog(null)} />
       ) : null}
+      {removeTarget ? (
+        <RemoveMemberDialog
+          member={removeTarget}
+          isOrgAdmin={isOrgAdmin}
+          grantIds={projectMembers
+            .filter((g) => g.user?.id === removeTarget.user?.id)
+            .map((g) => g.id)}
+          onClose={() => setRemoveTarget(null)}
+        />
+      ) : null}
     </Frame>
+  )
+}
+
+function RemoveMemberDialog({
+  member, isOrgAdmin, grantIds, onClose,
+}: {
+  member: Member
+  isOrgAdmin: boolean
+  grantIds: string[]
+  onClose: () => void
+}) {
+  const [busy, setBusy] = useState<null | "project" | "org">(null)
+  const [error, setError] = useState<string | null>(null)
+  const name = member.user?.name || member.user?.email || "this member"
+  const hasProjectAccess = grantIds.length > 0
+
+  async function removeFromProject() {
+    setBusy("project")
+    setError(null)
+    try {
+      for (const id of grantIds) await removeProjectMemberAction({ memberId: id })
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to remove from project")
+      setBusy(null)
+    }
+  }
+
+  async function removeFromOrg() {
+    setBusy("org")
+    setError(null)
+    try {
+      await removeOrgMemberAction({ memberId: member.id })
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to remove from organization")
+      setBusy(null)
+    }
+  }
+
+  return (
+    <EnvDialogShell
+      title={`Remove ${name}?`}
+      description="Remove this member from just this project, or from the entire organization."
+      onClose={onClose}
+    >
+      {error ? <p className="px-6 text-sm text-destructive">{error}</p> : null}
+      <div className="flex flex-col gap-3 px-6 pb-2">
+        <div className="flex flex-col gap-1">
+          <Button
+            variant="outline"
+            className="w-full justify-start"
+            loading={busy === "project"}
+            disabled={busy !== null || !hasProjectAccess}
+            onClick={removeFromProject}
+          >
+            Remove from project
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            {hasProjectAccess
+              ? "Revoke all environment access in this project. Member stays in the organization."
+              : "Member has no access to this project."}
+          </p>
+        </div>
+        {isOrgAdmin ? (
+          <div className="flex flex-col gap-1">
+            <Button
+              variant="destructive"
+              className="w-full justify-start"
+              loading={busy === "org"}
+              disabled={busy !== null}
+              onClick={removeFromOrg}
+            >
+              Remove from organization
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Delete this member from the whole organization, including every project.
+            </p>
+          </div>
+        ) : null}
+      </div>
+      <DialogFooter variant="bare" className="mt-2">
+        <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+      </DialogFooter>
+    </EnvDialogShell>
   )
 }
 
