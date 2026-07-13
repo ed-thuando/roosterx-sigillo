@@ -11,10 +11,38 @@
  */
 'use client'
 
+import { useEffect, useState } from 'react'
 import { ArrowDown } from 'lucide-react'
 import { VideoBackgroundShader } from '@holocron.so/vite/mdx'
 
 const HERO_FONT = "'IvarText', serif"
+
+/**
+ * VideoBackgroundShader inits raw WebGL in an effect and calls
+ * gl.getExtension() without a null-check. When the browser can't create a
+ * WebGL context (disabled, GPU blocklisted, no hardware accel) getContext
+ * returns null and the whole app crashes with:
+ *   "Cannot read properties of null (reading 'getExtension')"
+ * Gate the shader on a real WebGL support probe so it never mounts on
+ * unsupported browsers. Starts false so SSR and first client render match.
+ */
+function useWebglSupported() {
+  const [supported, setSupported] = useState(false)
+  useEffect(() => {
+    try {
+      const canvas = document.createElement('canvas')
+      setSupported(
+        !!(
+          canvas.getContext('webgl') ||
+          canvas.getContext('experimental-webgl')
+        ),
+      )
+    } catch {
+      setSupported(false)
+    }
+  }, [])
+  return supported
+}
 
 function GithubIcon({ size = 14 }: { size?: number }) {
   return (
@@ -36,22 +64,25 @@ const GITHUB_URL = 'https://github.com/remorses/sigillo'
 const X_URL = 'https://x.com/__morse'
 
 export function HeroSection() {
+  const webglSupported = useWebglSupported()
   return (
     <div className='relative mt-2 lg:mt-4 mb-4 lg:mb-6 w-screen ml-[calc(-50vw+50%)] flex flex-col items-center overflow-hidden'>
-      <VideoBackgroundShader
-        src='/assets/hero-bg.mp4'
-        className='absolute inset-0 w-full h-full'
-        canvasClassName='dark:opacity-60 opacity-40'
-        dotColor='#6ec9a0'
-        dotSize={6}
-        minDotSize={1}
-        dotMargin={1}
-        animSpeed={3}
-        gamma={0.8}
-        enableMask={false}
-        fluidStrength={0.2}
-        fluidCurl={80}
-      />
+      {webglSupported && (
+        <VideoBackgroundShader
+          src='/assets/hero-bg.mp4'
+          className='absolute inset-0 w-full h-full'
+          canvasClassName='dark:opacity-60 opacity-40'
+          dotColor='#6ec9a0'
+          dotSize={6}
+          minDotSize={1}
+          dotMargin={1}
+          animSpeed={3}
+          gamma={0.8}
+          enableMask={false}
+          fluidStrength={0.2}
+          fluidCurl={80}
+        />
+      )}
 
       {/* Foreground content */}
       <div className='relative z-[2] flex flex-col items-center justify-center px-6 pt-10 sm:pt-14 pb-4'>
