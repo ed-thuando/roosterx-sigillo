@@ -197,6 +197,16 @@ html:root {
   --accent: oklch(0.6204 0.195 253.83);
   --accent-foreground: oklch(0.9911 0 0);
   --border: oklch(90% 0.004 286.32);
+
+  /* No glassy surfaces: HeroUI defines the "soft" fills as
+     color-mix(..., transparent), and the app maps hover/active/highlight
+     backgrounds (--color-accent, --color-sidebar-accent, dropdown item
+     highlight, sidebar active project) onto them. Re-assert them opaque so
+     highlights are solid and the current project is clearly marked. */
+  --default-soft: var(--default);
+  --default-soft-hover: var(--default-hover);
+  --accent-soft: color-mix(in oklab, var(--accent) 15%, var(--surface));
+  --accent-soft-hover: color-mix(in oklab, var(--accent) 22%, var(--surface));
 }
 
 html:root.dark {
@@ -204,4 +214,16 @@ html:root.dark {
   --foreground: oklch(0.9911 0 0);
   --muted: oklch(70.5% 0.015 286.067);
   --border: oklch(28% 0.006 286.033);
+
+  /* Holocron's dark :root sets --accent to a translucent white
+     (rgba(255,255,255,0.1)). The app maps --color-primary onto --accent, so
+     without this every primary element (buttons, org icon, focus ring)
+     renders as a glassy gray in dark mode. */
+  --accent: oklch(0.6204 0.195 253.83);
+  --accent-foreground: oklch(0.9911 0 0);
+
+  --default-soft: var(--default);
+  --default-soft-hover: var(--default-hover);
+  --accent-soft: color-mix(in oklab, var(--accent) 15%, var(--surface));
+  --accent-soft-hover: color-mix(in oklab, var(--accent) 22%, var(--surface));
 }
