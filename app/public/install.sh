@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP="sigillo"
-REPO="remorses/sigillo"
+REPO="ed-thuando/roosterx-sigillo"
 
 MUTED='\033[0;2m'
 RED='\033[0;31m'
@@ -203,6 +203,13 @@ download_and_install() {
   if [ "$os" != "win32" ]; then
     chmod 755 "$INSTALL_DIR/$binary_name"
   fi
+
+  # Downloaded binaries get a Gatekeeper quarantine flag on macOS; clear it so
+  # the CLI runs without "cannot be opened because the developer cannot be
+  # verified".
+  if [ "$os" = "darwin" ]; then
+    xattr -dr com.apple.quarantine "$INSTALL_DIR/$binary_name" 2>/dev/null || true
+  fi
 }
 
 download_and_install
@@ -292,5 +299,5 @@ echo -e ""
 echo -e "cd <project>  ${MUTED}# Open directory${NC}"
 echo -e "sigillo      ${MUTED}# Run command${NC}"
 echo -e ""
-echo -e "${MUTED}For more information visit ${NC}https://github.com/remorses/sigillo"
+echo -e "${MUTED}For more information visit ${NC}https://github.com/ed-thuando/roosterx-sigillo"
 echo -e ""
