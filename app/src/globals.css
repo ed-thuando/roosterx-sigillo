@@ -82,7 +82,11 @@
   --content-max-width: 100%;
   /* App-specific tokens with no HeroUI equivalent. All color tokens now come
      from HeroUI's default theme (light on :root/.light, dark on .dark). */
-  --app-radius: 0.625rem;
+  --app-radius: 0.5rem;
+  /* Override HeroUI's field radius (default calc(--radius * 1.5) = 12px, too
+     round). Pin inputs/textareas/buttons to match --app-radius so all controls
+     share one radius. */
+  --field-radius: var(--app-radius);
 }
 
 
