@@ -9,20 +9,20 @@ ngoài kia** — bản đó trỏ tới server công khai, không phải server 
 ## 1. Cài đặt
 
 ### Cách A — Nhận sẵn file binary (đơn giản nhất)
-Xin file `sigillo` đã build từ người quản lý, rồi:
+Xin file `rx` đã build từ người quản lý, rồi:
 ```sh
 mkdir -p ~/.local/bin
-cp ~/Downloads/sigillo ~/.local/bin/sigillo
-chmod +x ~/.local/bin/sigillo
+cp ~/Downloads/rx ~/.local/bin/rx
+chmod +x ~/.local/bin/rx
 
 # Đảm bảo ~/.local/bin nằm trong PATH (thêm vào ~/.zshrc nếu chưa có):
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 
 # macOS có thể chặn app chưa ký — chạy 1 lần:
-xattr -d com.apple.quarantine ~/.local/bin/sigillo 2>/dev/null || true
+xattr -d com.apple.quarantine ~/.local/bin/rx 2>/dev/null || true
 
-sigillo --version
+rx --version
 ```
 
 ### Cách B — Tự build từ mã nguồn
@@ -39,26 +39,27 @@ git clone <repo-noi-bo>/roosterx-sigillo.git
 cd roosterx-sigillo/cli
 zig build -Doptimize=ReleaseFast
 mkdir -p ~/.local/bin
-cp zig-out/bin/sigillo ~/.local/bin/sigillo
-codesign --force --sign - ~/.local/bin/sigillo   # macOS
-chmod +x ~/.local/bin/sigillo
+cp zig-out/bin/rx ~/.local/bin/rx
+codesign --force --sign - ~/.local/bin/rx   # macOS
+chmod +x ~/.local/bin/rx
 hash -r
-sigillo --version
+rx --version
 ```
 
 ---
 
-## 2. Đăng nhập (trỏ đúng server nội bộ)
+## 2. Đăng nhập
 
 ```sh
-# Trỏ CLI tới server nội bộ:
-sigillo login --api-url https://env.shotpix.app
+rx login
 ```
+- Server mặc định đã là **https://env.shotpix.app** (build sẵn) — **không cần** `--api-url`.
+  Chỉ khi muốn trỏ server khác mới cần: `rx login --api-url <url>`.
 - Lệnh sẽ hiện một mã (device code) + link `https://env.shotpix.app/device`.
 - Mở link trên trình duyệt, đăng nhập Google, nhập mã để duyệt.
-- Token được lưu tại `~/.sigillo/config.json`.
+- Token được lưu tại `~/.rx/config.json`.
 
-> Nếu `login` chưa hỗ trợ `--api-url`, tạo thủ công `~/.sigillo/config.json`:
+> Cách khác (dùng token sẵn): tạo thủ công `~/.rx/config.json`:
 > ```json
 > { "default": { "api-url": "https://env.shotpix.app", "token": "<token-cua-ban>" } }
 > ```
@@ -70,13 +71,13 @@ sigillo login --api-url https://env.shotpix.app
 
 ```sh
 # Chạy lệnh với secret được bơm vào (secret bị che trong log mặc định):
-sigillo run -- next dev
+rx run -- next dev
 
 # Chỉ định project + môi trường:
-sigillo run --project <ten-project> --env dev -- next dev
+rx run --project <ten-project> --env dev -- next dev
 
 # Ví dụ:
-sigillo run --project PDF_Reader --env prod -- node server.js
+rx run --project PDF_Reader --env prod -- node server.js
 ```
 
 ---
@@ -87,4 +88,4 @@ sigillo run --project PDF_Reader --env prod -- node server.js
 - Bản CLI ngoài (`npm i -g sigillo`) **không lấy được** secret của mình vì:
   1. nó trỏ tới server công khai (khác `env.shotpix.app`),
   2. không có token do server mình cấp → bị từ chối (401).
-- Chỉ cấp token cho người/máy tin cậy. Giữ `~/.sigillo/config.json` riêng tư.
+- Chỉ cấp token cho người/máy tin cậy. Giữ `~/.rx/config.json` riêng tư.

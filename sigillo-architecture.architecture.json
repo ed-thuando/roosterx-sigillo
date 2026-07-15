@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Sigillo — Engineering System Architecture",
+    "subtitle": "Self-hosted secrets manager on Cloudflare Workers + D1 (roosterx build)",
+    "output": "sigillo-architecture.html"
+  },
+  "layout": { "mode": "grid", "cols": 6, "origin": [48, 128], "gapX": 34, "gapY": 74, "cellW": 140, "cellH": 66 },
+  "components": [
+    { "id": "user", "type": "external", "label": "User / Developer", "sublabel": "human · agent", "row": 0, "col": 0 },
+    { "id": "browser", "type": "frontend", "label": "Browser", "sublabel": "Dashboard UI", "row": 0, "col": 1, "tag": "orgs·projects·envs" },
+    { "id": "cli", "type": "frontend", "label": "Sigillo CLI", "sublabel": "login·setup·run·secrets", "row": 1, "col": 1 },
+    { "id": "child", "type": "backend", "label": "Child Process", "sublabel": "app under `run`", "row": 2, "col": 1 },
+    { "id": "ci", "type": "external", "label": "CI / AI Agents", "sublabel": "GitHub Actions", "row": 2, "col": 0, "tag": "SIGILLO_TOKEN" },
+    { "id": "google", "type": "external", "label": "Google / Firebase", "sublabel": "hosted login", "row": 0, "col": 2, "tag": "OIDC ID token" },
+    { "id": "appworker", "type": "backend", "label": "App Worker", "sublabel": "sigillo-app · env.shotpix.app", "row": 1, "col": 3, "tag": "REST + RSC dashboard" },
+    { "id": "authz", "type": "security", "label": "Authorization", "sublabel": "CASL abilities", "row": 2, "col": 3, "tag": "admin·member·viewer" },
+    { "id": "keystore", "type": "security", "label": "Worker Secret", "sublabel": "ENCRYPTION_KEY", "row": 0, "col": 4, "tag": "AES-256-GCM key" },
+    { "id": "d1model", "type": "database", "label": "Org · Project · Env", "sublabel": "D1 tables", "row": 0, "col": 5, "tag": "isolation scopes" },
+    { "id": "secretlog", "type": "database", "label": "secret_event", "sublabel": "append-only secrets + audit", "row": 1, "col": 5, "tag": "value_encrypted + iv" },
+    { "id": "apitoken", "type": "security", "label": "API Tokens", "sublabel": "project + env scoped", "row": 2, "col": 5, "tag": "bearer" },
+    { "id": "session", "type": "database", "label": "Session", "sublabel": "sig_session cookie", "row": 3, "col": 5 }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Cloudflare — self-hosted deployment (sigillo-app worker + sigillo-app-db)", "wraps": ["appworker", "authz", "keystore", "d1model", "secretlog", "apitoken", "session"] },
+    { "kind": "security-group", "label": "Encryption at rest (AES-256-GCM)", "wraps": ["keystore", "secretlog"] }
+  ],
+  "connections": [
+    { "from": "user", "to": "browser", "fromSide": "right", "toSide": "left" },
+    { "from": "user", "to": "cli", "fromSide": "bottom", "toSide": "left" },
+    { "from": "browser", "to": "google", "variant": "security", "fromSide": "right", "toSide": "left" },
+    { "from": "google", "to": "appworker", "label": "ID token", "variant": "security", "fromSide": "right", "toSide": "top" },
+    { "from": "browser", "to": "appworker", "label": "HTTPS · REST / RSC", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "from": "cli", "to": "appworker", "label": "Device Grant (RFC 8628)", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "from": "ci", "to": "appworker", "label": "Bearer token", "variant": "security", "fromSide": "right", "toSide": "left" },
+    { "from": "cli", "to": "child", "label": "inject · redact", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "labelDy": 30 },
+    { "from": "appworker", "to": "authz", "fromSide": "bottom", "toSide": "top" },
+    { "from": "appworker", "to": "d1model", "fromSide": "top", "toSide": "left" },
+    { "from": "appworker", "to": "secretlog", "label": "set / delete", "fromSide": "right", "toSide": "left" },
+    { "from": "keystore", "to": "secretlog", "label": "encrypt", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "from": "appworker", "to": "apitoken", "variant": "security", "fromSide": "bottom", "toSide": "left" }
+  ],
+  "cards": [
+    { "dot": "rose", "title": "Authentication", "items": ["Browser: Google/Firebase hosted OIDC → sig_session cookie", "CLI: Device Authorization Grant (RFC 8628)", "CI / agents: API-token bearer"] },
+    { "dot": "amber", "title": "Authorization & isolation", "items": ["CASL roles: org-admin, project-admin, member, viewer", "Organization / project / environment scoping", "Tab & action visibility gated by ability"] },
+    { "dot": "emerald", "title": "Secret lifecycle", "items": ["Event-sourced secret_event (set / delete)", "AES-256-GCM encrypt at rest; key never in D1", "Decrypt only in Worker; injected into child env", "Output redacted; no plaintext on disk unless --mount"] },
+    { "dot": "cyan", "title": "Runtime targets & formats", "items": ["run injects env into any process", "mount / download: env, json, yaml, docker, dotnet-json", "Consumed by CI (GitHub Actions), containers, .NET"] }
+  ]
+}

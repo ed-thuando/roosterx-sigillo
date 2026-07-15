@@ -1,6 +1,6 @@
 {
   "$schema": "https://holocron.so/docs.json",
-  "name": "Sigillo",
+  "name": "RoosterX Secrets",
   "description": "Self-hostable secrets manager for humans & agents",
   "favicon": "/favicon.png",
   "colors": {

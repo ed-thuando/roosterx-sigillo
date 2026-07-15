@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "rx — Usage: one secret, dev locally then prod on deploy",
+    "subtitle": "Encrypted at rest · decrypted only at runtime · injected into the process · logs redacted",
+    "output": "rx-usecase.html",
+    "viewBox": [1040, 940]
+  },
+  "participants": [
+    { "id": "admin", "type": "external", "label": "Admin", "sublabel": "workspace owner" },
+    { "id": "dash", "type": "frontend", "label": "Dashboard", "sublabel": "web (encrypted store)" },
+    { "id": "dev", "type": "external", "label": "Dev", "sublabel": "engineer" },
+    { "id": "cli", "type": "backend", "label": "rx CLI", "sublabel": "project folder" },
+    { "id": "app", "type": "backend", "label": "App", "sublabel": "process / deploy" }
+  ],
+  "segments": [
+    { "from": 165, "to": 245, "label": "01 · ADMIN ADDS SECRET (per environment)" },
+    { "from": 265, "to": 435, "label": "02 · DEV LINKS THE PROJECT FOLDER" },
+    { "from": 450, "to": 660, "label": "03 · RUN LOCALLY — env dev" },
+    { "from": 680, "to": 845, "label": "04 · DEPLOY — env prod" }
+  ],
+  "messages": [
+    { "from": "admin", "to": "dash", "y": 190, "label": "Add DATABASE_URL — dev & prod values", "variant": "emphasis" },
+    { "from": "dash", "to": "admin", "y": 228, "label": "Encrypted at rest (AES-256-GCM)", "variant": "return" },
+
+    { "from": "dev", "to": "cli", "y": 288, "label": "rx login", "variant": "default" },
+    { "from": "cli", "to": "dash", "y": 326, "label": "Authenticate in browser", "variant": "security" },
+    { "from": "dash", "to": "cli", "y": 364, "label": "Token → ~/.rx", "variant": "return" },
+    { "from": "dev", "to": "cli", "y": 410, "label": "rx setup -p api --env dev  (links this folder)", "variant": "default" },
+
+    { "from": "dev", "to": "cli", "y": 470, "label": "rx run -- pnpm dev", "variant": "emphasis" },
+    { "from": "cli", "to": "dash", "y": 508, "label": "Fetch secrets · env dev", "variant": "default" },
+    { "from": "dash", "to": "cli", "y": 546, "label": "DATABASE_URL · decrypted", "variant": "return" },
+    { "from": "cli", "to": "app", "y": 592, "label": "Inject ENV → app reads process.env", "variant": "emphasis" },
+    { "from": "app", "to": "cli", "y": 630, "label": "Log: postgres://*** (redacted)", "variant": "return" },
+
+    { "from": "dev", "to": "cli", "y": 702, "label": "rx run --env prod   (or CI: RX_TOKEN)", "variant": "emphasis" },
+    { "from": "cli", "to": "dash", "y": 740, "label": "Fetch secrets · env prod", "variant": "security" },
+    { "from": "dash", "to": "cli", "y": 778, "label": "prod DATABASE_URL · decrypted", "variant": "return" },
+    { "from": "cli", "to": "app", "y": 818, "label": "Deploy with prod ENV", "variant": "emphasis" }
+  ],
+  "activations": [
+    { "participant": "dash", "from": 185, "to": 782, "type": "frontend" },
+    { "participant": "cli", "from": 283, "to": 822, "type": "backend" },
+    { "participant": "app", "from": 588, "to": 634, "type": "backend" }
+  ],
+  "cards": []
+}

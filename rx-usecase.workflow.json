@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "rx — one secret, three environments (dev · staging · prod)",
+    "subtitle": "Set up once. Each environment keeps its own value; pick it at run time with rx run --env <name>.",
+    "output": "rx-usecase-raw.html"
+  },
+  "lanes": [
+    { "id": "setup", "label": "01 · Set up (once) — Dashboard + CLI" },
+    { "id": "value", "label": "02 · Secret value — stored per env" },
+    { "id": "run", "label": "03 · rx run --env <name>" },
+    { "id": "app", "label": "04 · App receives it (decrypted · redacted)" }
+  ],
+  "mainPath": ["np", "ae", "as", "cli"],
+  "nodes": [
+    { "id": "np", "lane": "setup", "col": 0, "type": "frontend", "label": "New Project", "sublabel": "roosterx / api" },
+    { "id": "ae", "lane": "setup", "col": 1, "type": "frontend", "label": "Add 3 Envs", "sublabel": "dev·stg·prod" },
+    { "id": "as", "lane": "setup", "col": 3, "type": "security", "label": "Add Secret", "sublabel": "DATABASE_URL", "tag": "AES-256-GCM" },
+    { "id": "cli", "lane": "setup", "col": 5, "type": "frontend", "label": "Setup CLI", "sublabel": "rx login + setup" },
+
+    { "id": "vdev", "lane": "value", "col": 1, "type": "security", "label": "env dev", "sublabel": "DATABASE_URL =", "tag": "localhost:5432" },
+    { "id": "vstg", "lane": "value", "col": 3, "type": "security", "label": "env staging", "sublabel": "DATABASE_URL =", "tag": "stg.db:5432" },
+    { "id": "vprod", "lane": "value", "col": 5, "type": "security", "label": "env prod", "sublabel": "DATABASE_URL =", "tag": "prod.db:5432" },
+
+    { "id": "rdev", "lane": "run", "col": 1, "type": "frontend", "label": "rx run", "sublabel": "-- pnpm dev" },
+    { "id": "rstg", "lane": "run", "col": 3, "type": "frontend", "label": "rx run", "sublabel": "--env staging" },
+    { "id": "rprod", "lane": "run", "col": 5, "type": "frontend", "label": "rx run", "sublabel": "--env prod", "tag": "CI · RX_TOKEN" },
+
+    { "id": "adev", "lane": "app", "col": 1, "type": "backend", "label": "App dev", "sublabel": "→ localhost:5432", "tag": "log: ***" },
+    { "id": "astg", "lane": "app", "col": 3, "type": "backend", "label": "App staging", "sublabel": "→ stg.db:5432" },
+    { "id": "aprod", "lane": "app", "col": 5, "type": "external", "label": "Deploy prod", "sublabel": "→ prod.db:5432" }
+  ],
+  "edges": [
+    { "from": "np", "to": "ae", "variant": "default" },
+    { "from": "ae", "to": "as", "variant": "default" },
+    { "from": "as", "to": "cli", "variant": "default" },
+
+    { "from": "as", "to": "vstg", "label": "1 secret, 3 env values", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "route": "drop", "labelDy": 16 },
+
+    { "from": "vdev", "to": "rdev", "variant": "default", "fromSide": "bottom", "toSide": "top" },
+    { "from": "vstg", "to": "rstg", "variant": "default", "fromSide": "bottom", "toSide": "top" },
+    { "from": "vprod", "to": "rprod", "variant": "default", "fromSide": "bottom", "toSide": "top" },
+
+    { "from": "rdev", "to": "adev", "label": "decrypt · inject", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "from": "rstg", "to": "astg", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "from": "rprod", "to": "aprod", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" }
+  ],
+  "cards": []
+}

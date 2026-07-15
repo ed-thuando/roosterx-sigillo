@@ -61,7 +61,7 @@ function CliBanner() {
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
         <div className="flex flex-1 flex-col gap-1.5">
           <h2 className="text-base font-semibold tracking-tight">
-            Use the Sigillo CLI
+            Use the RoosterX Secrets CLI
           </h2>
           <p className="text-sm leading-6 text-muted-foreground">
             Install with npm, then use <code className="mono-sm text-foreground">sigillo run</code> to pass secrets to your process. Output is redacted by default.

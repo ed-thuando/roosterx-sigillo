@@ -49,67 +49,69 @@ Mở https://env.shotpix.app → bấm **Login with Google** → đăng nhập b
 Xem file **`cli/HUONG_DAN_CAI_DAT_VI.md`** (nhận binary sẵn, hoặc tự build bằng **Zig 0.15.1**).
 Sau khi cài, kiểm tra:
 ```sh
-sigillo --version
+rx --version
 ```
 
-### 2. Đăng nhập (trỏ đúng server nội bộ)
+### 2. Đăng nhập
 ```sh
-sigillo login --api-url https://env.shotpix.app
+rx login
 ```
+- Server mặc định đã là **https://env.shotpix.app** (build sẵn) — **không cần** `--api-url`.
+  Chỉ khi muốn trỏ server khác mới cần: `rx login --api-url <url>`.
 - CLI hiện 1 **device code** + link. Mở link, đăng nhập Google, nhập code để duyệt.
-- Token + api-url được lưu ở `~/.sigillo/config.json` (theo thư mục — "scope").
-- Kiểm tra đăng nhập: `sigillo me`
+- Token + api-url được lưu ở `~/.rx/config.json` (theo thư mục — "scope").
+- Kiểm tra đăng nhập: `rx me`
 
-> Cách khác: đặt biến môi trường `SIGILLO_API_URL=https://env.shotpix.app` và `SIGILLO_TOKEN=sig_xxx`
+> Cách khác: đặt biến môi trường `RX_TOKEN=sig_xxx` (và `RX_API_URL` nếu dùng server khác)
 > (token lấy từ tab **Tokens** trên web).
 
 ### 3. Chọn project + môi trường mặc định cho thư mục hiện tại
 ```sh
-sigillo setup --project <project-id> --env dev
+rx setup --project <project-id> --env dev
 ```
-Lưu vào `~/.sigillo` (không lưu trong repo). Sau đó không cần gõ `--project/--env` mỗi lần.
+Lưu vào `~/.rx` (không lưu trong repo). Sau đó không cần gõ `--project/--env` mỗi lần.
 
 ### 4. Chạy ứng dụng với secret được bơm vào
 ```sh
 # Dùng project/env đã setup:
-sigillo run -- next dev
+rx run -- next dev
 
 # Hoặc chỉ định trực tiếp:
-sigillo run --project <id> --env prod -- node server.js
+rx run --project <id> --env prod -- node server.js
 
 # Chạy 1 câu lệnh shell:
-sigillo run --command "npm start"
+rx run --command "npm start"
 ```
 Output của app được **che secret** mặc định. Muốn tắt che (cẩn thận): `--disable-redaction`.
 
 ### 5. Ghi secret ra file (khi công cụ cần đọc `.env`)
 ```sh
-sigillo run --mount .env -- <lệnh>
+rx run --mount .env -- <lệnh>
 # Định dạng khác: --mount-format env|json|yaml|docker|dotnet-json
 ```
 
 ### 6. Xem secret
 ```sh
-sigillo secrets                 # liệt kê secret của env đang cấu hình
-sigillo secrets get <TEN>       # lấy giá trị 1 secret
+rx secrets                      # liệt kê secret của env đang cấu hình
+rx secrets get <TEN>            # lấy giá trị 1 secret
 ```
 
 ### 7. Lệnh hữu ích khác
 ```sh
-sigillo me                      # xem user hiện tại
-sigillo logout                  # đăng xuất (xóa auth của scope)
-sigillo projects                # liệt kê project
-sigillo environments            # liệt kê môi trường của project
+rx me                           # xem user hiện tại
+rx logout                       # đăng xuất (xóa auth của scope)
+rx projects                     # liệt kê project
+rx environments                 # liệt kê môi trường của project
 ```
 
 ---
 
 ## Phần 3 — Luồng dùng điển hình
 1. **Web:** admin tạo project → thêm secret vào từng môi trường → tạo API token (tab Tokens) hoặc mời thành viên (tab Access).
-2. **CLI (máy dev):** `sigillo login --api-url https://env.shotpix.app` → `sigillo setup --project <id> --env dev` → `sigillo run -- <lệnh chạy app>`.
-3. **CI/CD:** đặt `SIGILLO_API_URL` + `SIGILLO_TOKEN` (token từ web) → `sigillo run -- <build/deploy>`.
+2. **CLI (máy dev):** `rx login` → `rx setup --project <id> --env dev` → `rx run -- <lệnh chạy app>`.
+3. **CI/CD:** đặt `RX_TOKEN` (token từ web; thêm `RX_API_URL` nếu dùng server khác) → `rx run -- <build/deploy>`.
 
 ## Bảo mật
 - Quyền truy cập secret phụ thuộc vào **token + tài khoản trên server nội bộ**, không phụ thuộc file CLI.
-- Chỉ cấp token cho người/máy tin cậy. Giữ `~/.sigillo/config.json` riêng tư.
+- Chỉ cấp token cho người/máy tin cậy. Giữ `~/.rx/config.json` riêng tư.
 - Token gắn với 1 môi trường → cấp token prod hạn chế, token dev thoải mái hơn.
